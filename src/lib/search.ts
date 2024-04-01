@@ -9,6 +9,6 @@ export abstract class Search {
     abstract search(query: string): Promise<{key: string, title: string, score: number}[]>;
     abstract add(document: Document | Document[]): Promise<boolean>;
     abstract remove(key: string | string[]): Promise<number>;
-    abstract buildIndex(documents: {key: string, document: string}[]): Promise<boolean>;
+    abstract buildIndex(documents: Document | Document[]): Promise<boolean>;
     abstract resetIndex(): Promise<void>;
 }

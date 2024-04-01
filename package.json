@@ -12,15 +12,12 @@
     "@upstash/ratelimit": "^1.0.1",
     "@upstash/redis": "^1.29.0",
     "@upstash/vector": "^1.0.4",
-    "lunr": "^2.3.9",
     "next": "14.1.4",
     "openai": "^4.29.2",
     "react": "^18",
-    "react-dom": "^18",
-    "wink-nlp": "^2.1.0"
+    "react-dom": "^18"
   },
   "devDependencies": {
-    "@types/lunr": "^2.3.7",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",

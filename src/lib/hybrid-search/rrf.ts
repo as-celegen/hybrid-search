@@ -1,5 +1,6 @@
 
 import { HybridSearch } from "@/lib/hybrid-search/types";
+import { Result } from '@/lib/hybrid-search/types';
 
 export class RRF extends HybridSearch {
     k: number;
@@ -8,23 +9,19 @@ export class RRF extends HybridSearch {
         this.k = k;
     }
 
-    combineResults(...results: { key: string; title: string; score: number }[][]): {
-        key: string;
-        title: string;
-        score: number
-    }[] {
+    combineResults(...results: Result[][]): Result[] {
         const resultsSorted = results.map( r => r.sort((a, b) => b.score - a.score));
 
         const combinedResults = resultsSorted.reduce((acc, r) => {
-            r.forEach(({ key, title, score }, index) => {
+            r.forEach(({ key, score, ...rest }, index) => {
                 if (!acc[key]) {
-                    acc[key] = { key, title, score: 1.0/(this.k + index) };
+                    acc[key] = {...rest, key, score: 1.0/(this.k + index) };
                 } else {
                     acc[key].score += 1.0/(this.k + index);
                 }
             });
             return acc;
-        }, {} as Record<string, { key: string; title: string; score: number }>);
+        }, {} as Record<string, Result>);
 
         return Object.values(combinedResults).sort((a, b) => b.score - a.score);
     }

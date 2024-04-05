@@ -1,8 +1,9 @@
 import { OpenAISearch } from '@/lib/semantic-search/openai';
 import {Search} from "@/lib/search";
 
-const semanticSearchAlgorithms: Record<string, Search> = {
-    "OPENAI": new OpenAISearch(),
+const semanticSearchAlgorithms: Record<string, new () => Search> = {
+    "OPENAI": OpenAISearch,
 };
 
-export const semanticSearch: Search = semanticSearchAlgorithms[process.env.SEMANTIC_SEARCH_ALGORITHM ?? 'OPENAI'] ?? semanticSearchAlgorithms['OPENAI'];
+const semanticSearchType = semanticSearchAlgorithms[process.env.SEMANTIC_SEARCH_ALGORITHM ?? 'OPENAI'] ?? semanticSearchAlgorithms['OPENAI'];
+export const semanticSearch: Search = new semanticSearchType();

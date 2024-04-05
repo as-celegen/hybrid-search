@@ -1,3 +1,9 @@
+export interface Result {
+    key: string;
+    score: number;
+    [key: string]: any;
+}
+
 export abstract class HybridSearch {
-    abstract combineResults(...results: {key: string, title: string, score: number}[][]): {key: string, title: string, score: number}[];
+    abstract combineResults(...results: Result[][]): Result[];
 }

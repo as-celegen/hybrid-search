@@ -1,14 +1,14 @@
 import {Document, Metadata, Search} from "@/lib/search";
-import Error from "next/error";
 import {redis} from "@/context/redis";
 import {Index} from "@upstash/vector";
 
 interface WordStatistic {
     numberOfDocumentsContainingWord: number;
     index: number;
+    idf: number;
 }
 
-type WordStatistics = Record<string, WordStatistic>;
+export type WordStatistics = Record<string, WordStatistic>;
 
 interface BM25Info {
     wordStatistics: WordStatistics;
@@ -17,107 +17,48 @@ interface BM25Info {
     numberOfWords: number;
 }
 
-//TODO: Fix this regex
-const wordSplitRegex = /[\s.,;:!?]+/;
 
 export class BM25 extends Search {
     wordStatistics: WordStatistics = {};
     numberOfDocuments: number = 0;
-    ready: boolean = false;
-    pending: Promise<void>;
-    index: Index<Metadata>;
+    ready: Promise<boolean>;
     averageDocumentLength: number = 0;
     k: number;
     b: number;
     numberOfWords: number = 0;
+    index: Index<Metadata>;
+    searchType: string = 'BM25';
+
 
     constructor(k  = 1.5, b  = 0.75) {
         super();
         this.b = b;
         this.k = k;
 
-        this.pending = redis.get<BM25Info>('BM25-info').then((info) => {
+        this.index = new Index({
+            'url': process.env.BM25_VECTOR_INDEX_URL,
+            'token': process.env.BM25_VECTOR_INDEX_TOKEN,
+        });
+
+        this.ready = redis.get<BM25Info>('BM25-info').then((info) => {
             if (info) {
                 this.wordStatistics = info.wordStatistics;
                 this.numberOfDocuments = info.numberOfDocuments;
                 this.averageDocumentLength = info.averageDocumentLength;
                 this.numberOfWords = info.numberOfWords;
-                this.ready = true;
+                return true;
             }
-        });
-
-        this.index = new Index({
-            'url': process.env.BM25_VECTOR_INDEX_URL,
-            'token': process.env.BM25_VECTOR_INDEX_TOKEN,
-        });
-    }
-
-
-    async search(query: string): Promise<{key: string, title: string, score: number}[]> {
-        await this.pending;
-        if (!this.ready) {
-            return [];
-        }
-        const results = await this.index.query({
-            vector: this.getVector(query),
-            topK: 100,
-            includeMetadata: true,
-        });
-        return results.map((result) => ({
-            key: result.id.toString(),
-            title: result.metadata?.title ?? "Unknown title",
-            score: result.score,
-        }));
-    }
-    async add(document: Document | Document[]): Promise<boolean> {
-        await this.pending;
-        if (!this.ready) {
             return false;
-        }
-        const documents = Array.isArray(document) ? document : [document];
-        return 'Success' === await this.index.upsert(await Promise.all(documents.map(async (doc) => ({
-            id: doc.key,
-            vector: this.getVector(doc.document),
-            metadata: {
-                key: doc.key,
-                title: doc.title,
-            },
-        }))));
+        });
     }
-    async remove(key: string | string[]): Promise<number> {
-        await this.pending;
-        if (!this.ready) {
-            return 0;
-        }
-        const keys = Array.isArray(key) ? key : [key];
-        return (await this.index.delete(keys)).deleted;
-    }
+
 
     async buildIndex(documents: Document[]): Promise<boolean> {
-        await this.pending;
+        await this.ready;
         await this.resetIndex();
-        this.numberOfDocuments = documents.length;
-        documents.map((document) => {
-            const words = document.document.split(wordSplitRegex);
-            words.map((word) => {
-                word = word.toLowerCase();
-                if (!this.wordStatistics[word]) {
-                    this.wordStatistics[word] = {
-                        numberOfDocumentsContainingWord: 0,
-                        index: -1,
-                    };
-                }
-                this.wordStatistics[word].numberOfDocumentsContainingWord++;
-            });
-            this.averageDocumentLength += words.length;
-        });
-        this.averageDocumentLength /= this.numberOfDocuments;
 
-        Object.keys(this.wordStatistics).sort().map((word, index) => {
-            this.wordStatistics[word].index = index;
-        });
+        await this.prepareIndex(documents);
 
-        this.numberOfWords = Object.keys(this.wordStatistics).length;
         return 'OK' === (await redis.set<BM25Info>('BM25-info', {
             wordStatistics: this.wordStatistics,
             numberOfDocuments: this.numberOfDocuments,
@@ -126,9 +67,41 @@ export class BM25 extends Search {
         })) && await this.add(documents);
     }
 
-    getVector(text: string): Array<number> {
+    async prepareIndex(documents: Document[]): Promise<boolean> {
+        this.numberOfDocuments = documents.length;
+        this.averageDocumentLength = 0;
+        this.wordStatistics = {};
+        documents.map((document) => {
+            const words: string[] = document.document.match(/\w+/g) ?? [];
+            words.map((word) => {
+                word = word.toLowerCase();
+                if (!this.wordStatistics[word]) {
+                    this.wordStatistics[word] = {
+                        numberOfDocumentsContainingWord: 0,
+                        index: -1,
+                        idf: 0,
+                    };
+                }
+                this.wordStatistics[word].numberOfDocumentsContainingWord++;
+            });
+            this.averageDocumentLength += words.length;
+        });
+        this.averageDocumentLength /= this.numberOfDocuments;
+
+        const allWords = Object.keys(this.wordStatistics).sort();
+
+        allWords.map((word, index) => {
+            this.wordStatistics[word].idf = Math.log((this.numberOfDocuments + 1)/(this.wordStatistics[word].numberOfDocumentsContainingWord + 0.5));
+            this.wordStatistics[word].index = index;
+        });
+        this.numberOfWords = allWords.length;
+        this.ready = Promise.resolve(true);
+        return true;
+    }
+
+    async getVector(text: string): Promise<Array<number>> {
         const wordCounts : Record<string, number> = {};
-        const words = text.split(wordSplitRegex);
+        const words: string[] = text.match(/\w+/g) ?? [];
         const vector: number[] = Array(this.numberOfWords).fill(0);
 
         words.map((word) => {
@@ -136,22 +109,52 @@ export class BM25 extends Search {
             wordCounts[word] = (wordCounts[word] ?? 0) + 1;
         });
 
-        Object.keys(wordCounts).map((word) => {
+        Object.entries(wordCounts).map(([word, wordCount]) => {
             word = word.toLowerCase();
-            const wordCount = wordCounts[word] ?? 0;
-            if(wordCount === 0) {
+            wordCount = wordCount ?? 0;
+            const index = this.wordStatistics[word]?.index ?? -1;
+            if(wordCount === 0 || index === -1) {
                 return;
             }
-            const idf = Math.log((this.numberOfDocuments + 1)/(this.wordStatistics[word].numberOfDocumentsContainingWord + 0.5));
+
             const tf = (this.k+1)* wordCount  / (wordCount + this.k * (1 - this.b + this.b * (words.length / this.averageDocumentLength)));
-            vector[this.wordStatistics[word].index] = tf * idf;
+            vector[index] = tf * this.wordStatistics[word].idf;
         });
-        return vector;
+        // TODO: Fix the dimension limit
+        let resizedVector: number[] = vector;
+        if(vector.length > 1536) {
+            resizedVector = vector.slice(0, 1536);
+        } else if(vector.length < 1536) {
+            resizedVector = vector.concat(Array.from({length: 1536 - vector.length}, () => 0));
+        }
+        return resizedVector;
+    }
+
+    async getVectorForSearch(text: string): Promise<Array<number>> {
+        const words: string[] = text.match(/\w+/g) ?? [];
+        const vector: number[] = Array(this.numberOfWords).fill(0);
+
+        words.map((word) => {
+            word = word.toLowerCase();
+            const index = this.wordStatistics[word]?.index ?? -1;
+            if(index === -1) {
+                return;
+            }
+            vector[index] += 1.1;
+        });
+        // TODO: Fix the dimension limit
+        let resizedVector: number[] = vector;
+        if(vector.length > 1536) {
+            resizedVector = vector.slice(0, 1536);
+        } else if(vector.length < 1536) {
+            resizedVector = vector.concat(Array.from({length: 1536 - vector.length}, () => 0));
+        }
+        return resizedVector;
     }
 
     async resetIndex(): Promise<void> {
         await Promise.all([
-            this.index.reset(),
+            super.resetIndex(),
             redis.del('BM25-info')
         ]);
     }

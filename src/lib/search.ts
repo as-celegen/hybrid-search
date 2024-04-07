@@ -8,28 +8,27 @@ export interface Metadata extends Record<string, unknown> {
     searchType: string;
 }
 
+export const dimension = 384;
+
 export abstract class Search {
     abstract ready: Promise<boolean>;
     abstract index: Index<Metadata>;
     abstract searchType: string;
+    useSingleVectorIndex: boolean = process.env.USE_SINGLE_VECTOR_INDEX === 'true';
 
     async search(query: string, topK= 20): Promise<{key: string, title: string, score: number}[]> {
         if (!await this.ready) {
             return [];
         }
         const vector = await this.getVectorForSearch(query);
-        console.log(vector);
-        // TODO: Remove metadata filtering when there are different indexes for different searches
         const results = await this.index.query({
             vector,
             includeMetadata: true,
             topK,
-            includeVectors: true,
+            filter: this.useSingleVectorIndex ? `searchType = "${this.searchType}"` : undefined,
         });
-        console.log(results);
-        console.log("a");
         return results.map((result) => ({
-            key: result.id.toString(),
+            key: result.metadata?.key ?? result.id.toString(),
             title: result.metadata?.title ?? "Unknown title",
             score: result.score,
         }));
@@ -39,9 +38,8 @@ export abstract class Search {
             return false;
         }
         const documents = Array.isArray(document) ? document : [document];
-        // TODO: Remove metadata when there are different indexes for different searches
         return 'Success' === await this.index.upsert(await Promise.all(documents.map(async (doc) => ({
-            id: doc.key,
+            id: `${doc.key}#${this.searchType}`,
             vector: await this.getVector(doc.document),
             metadata: {
                 key: doc.key,
@@ -55,7 +53,7 @@ export abstract class Search {
             return 0;
         }
         const keys = Array.isArray(key) ? key : [key];
-        return (await this.index.delete(keys)).deleted;
+        return (await this.index.delete(keys.map((id => `${id}#${this.searchType}`)))).deleted;
     }
 
     async resetIndex(): Promise<void> {

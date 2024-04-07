@@ -1,6 +1,7 @@
 import {BM25, WordStatistics} from "@/lib/full-text-search/bm25";
 import {describe, it, expect, beforeAll, expectTypeOf} from "vitest";
 import {redis} from "@/context/redis";
+import {dimension} from "@/lib/search";
 
 const documents = [
     {key: '1', title: 'Hello', document: 'Hello world'},
@@ -46,7 +47,7 @@ describe('BM25 Search', () => {
         console.log(vector);
         expectTypeOf(vector).toBeArray();
         expect(vector.length).toBeGreaterThan(0);
-        const testVector = Array.from({length: 1536}, () => 0);
+        const testVector = Array.from({length: dimension}, () => 0);
         const tf = (wordCount: number, length: number) => (search.k+1)* wordCount  / (wordCount + search.k * (1 - search.b + search.b * (length / search.averageDocumentLength)));
         testVector[search.wordStatistics['hello'].index] = tf(1, 2) * search.wordStatistics['hello'].idf;
         testVector[search.wordStatistics['world'].index] = tf(1, 2) * search.wordStatistics['world'].idf;
@@ -57,7 +58,7 @@ describe('BM25 Search', () => {
         const vector = await search.getVectorForSearch('hello world');
         expectTypeOf(vector).toBeArray();
         expect(vector.length).toBeGreaterThan(0);
-        const testVector = Array.from({length: 1536}, () => 0);
+        const testVector = Array.from({length: dimension}, () => 0);
         testVector[search.wordStatistics['hello'].index] = 1;
         testVector[search.wordStatistics['world'].index] = 1;
         expect(vector).toEqual(testVector);
@@ -66,25 +67,25 @@ describe('BM25 Search', () => {
     it('should build an index', async () => {
         const result = await search.buildIndex(documents);
         expect(result).toBe(true);
-        const vector = await search.index.fetch(['1']);
+        const vector = await search.index.fetch(['1#BM25']);
         expectTypeOf(vector).toBeArray();
         const info = await redis.get<BM25>('BM25-info');
         expectTypeOf(info).toBeObject;
     });
 
     it('should add documents', async () => {
+        const search = new BM25();
+        await search.prepareIndex(documents);
         const result = await search.add(documents.map(({key, title, document}) => ({key: key+6, title, document})));
         expect(result).toBe(true);
-        const vector = await search.index.fetch(['7', '8'], {includeMetadata: true});
+        const vector = await search.index.fetch(['16#BM25', '26#BM25'], {includeMetadata: true});
         expectTypeOf(vector).toBeArray();
-        expect(vector).toHaveLength(2);
+        expect(vector.filter(i => i !== null)).toHaveLength(2);
     });
 
     it('should search documents', async () => {
         const search = new BM25();
-        await search.buildIndex(documents);
-        console.log(await search.index.info());
-        console.log("asd");
+        await search.prepareIndex(documents);
         await new Promise(resolve => setTimeout(resolve, 10000));
         const results = await search.search('foo');
         expectTypeOf(results).toBeArray();
@@ -97,7 +98,7 @@ describe('BM25 Search', () => {
         await search.add(documents);
         const result = await search.remove('1');
         expect(result).toBe(1);
-        const vector = await search.index.fetch(['1']);
+        const vector = await search.index.fetch(['1#BM25']);
         expect(vector).toEqual([null]);
     });
 
@@ -105,7 +106,7 @@ describe('BM25 Search', () => {
         const search = new BM25();
         await search.buildIndex(documents);
         await search.resetIndex();
-        const result = await search.index.fetch(['1']);
+        const result = await search.index.fetch(['1#BM25']);
         expect(result).toEqual([null]);
     });
 });

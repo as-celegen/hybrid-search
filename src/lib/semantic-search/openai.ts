@@ -1,5 +1,5 @@
 import { OpenAI } from 'openai';
-import {Metadata, Search, Document} from "@/lib/search";
+import {Metadata, Search, Document, dimension} from "@/lib/search";
 import { Index } from '@upstash/vector';
 
 export class OpenAISearch extends Search {
@@ -12,10 +12,14 @@ export class OpenAISearch extends Search {
     constructor() {
         super();
 
-        this.index = new Index({
-            'url': process.env.OPENAI_VECTOR_INDEX_URL,
-            'token': process.env.OPENAI_VECTOR_INDEX_TOKEN,
-        });
+        if(process.env.USE_SINGLE_VECTOR_INDEX === 'true') {
+            this.index = Index.fromEnv();
+        }else {
+            this.index = new Index({
+                'url': process.env.OPENAI_VECTOR_INDEX_URL,
+                'token': process.env.OPENAI_VECTOR_INDEX_TOKEN,
+            });
+        }
 
         this.openai = new OpenAI({
             apiKey: process.env.OPENAI_API_KEY,
@@ -36,13 +40,12 @@ export class OpenAISearch extends Search {
 
     async getVector(text: string): Promise<Array<number>> {
         const embedding = await this.openai.embeddings.create({input: text, model: this.model});
-        console.log(embedding);
         // TODO: Fix the dimension limit
         let vector = embedding.data[0].embedding;
-        if(vector.length > 1536) {
-            vector = vector.slice(0, 1536);
-        } else if(vector.length < 1536) {
-            vector = vector.concat(Array.from({length: 1536 - vector.length}, () => 0));
+        if(vector.length > dimension) {
+            vector = vector.slice(0, dimension);
+        } else if(vector.length < dimension) {
+            vector = vector.concat(Array.from({length: dimension - vector.length}, () => 0));
         }
         return vector;
     }

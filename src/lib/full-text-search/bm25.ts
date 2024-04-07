@@ -1,4 +1,4 @@
-import {Document, Metadata, Search} from "@/lib/search";
+import {dimension, Document, Metadata, Search} from "@/lib/search";
 import {redis} from "@/context/redis";
 import {Index} from "@upstash/vector";
 
@@ -35,10 +35,14 @@ export class BM25 extends Search {
         this.b = b;
         this.k = k;
 
-        this.index = new Index({
-            'url': process.env.BM25_VECTOR_INDEX_URL,
-            'token': process.env.BM25_VECTOR_INDEX_TOKEN,
-        });
+        if(process.env.USE_SINGLE_VECTOR_INDEX === 'true') {
+            this.index = Index.fromEnv();
+        }else {
+            this.index = new Index({
+                'url': process.env.BM25_VECTOR_INDEX_URL,
+                'token': process.env.BM25_VECTOR_INDEX_TOKEN,
+            });
+        }
 
         this.ready = redis.get<BM25Info>('BM25-info').then((info) => {
             if (info) {
@@ -122,10 +126,10 @@ export class BM25 extends Search {
         });
         // TODO: Fix the dimension limit
         let resizedVector: number[] = vector;
-        if(vector.length > 1536) {
-            resizedVector = vector.slice(0, 1536);
-        } else if(vector.length < 1536) {
-            resizedVector = vector.concat(Array.from({length: 1536 - vector.length}, () => 0));
+        if(vector.length > dimension) {
+            resizedVector = vector.slice(0, dimension);
+        } else if(vector.length < dimension) {
+            resizedVector = vector.concat(Array.from({length: dimension - vector.length}, () => 0));
         }
         return resizedVector;
     }
@@ -140,14 +144,14 @@ export class BM25 extends Search {
             if(index === -1) {
                 return;
             }
-            vector[index] += 1.1;
+            vector[index] += 1;
         });
         // TODO: Fix the dimension limit
         let resizedVector: number[] = vector;
-        if(vector.length > 1536) {
-            resizedVector = vector.slice(0, 1536);
-        } else if(vector.length < 1536) {
-            resizedVector = vector.concat(Array.from({length: 1536 - vector.length}, () => 0));
+        if(vector.length > dimension) {
+            resizedVector = vector.slice(0, dimension);
+        } else if(vector.length < dimension) {
+            resizedVector = vector.concat(Array.from({length: dimension - vector.length}, () => 0));
         }
         return resizedVector;
     }

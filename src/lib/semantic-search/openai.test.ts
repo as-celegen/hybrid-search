@@ -3,7 +3,6 @@ import {describe, it, expect, beforeAll, expectTypeOf} from "vitest";
 
 describe('OpenAISearch', () => {
     it('should create an instance', () => {
-        console.log(process.env);
         const search = new OpenAISearch();
         expect(search).toBeInstanceOf(OpenAISearch);
     });

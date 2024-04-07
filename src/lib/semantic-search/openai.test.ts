@@ -1,5 +1,5 @@
 import {OpenAISearch } from "@/lib/semantic-search/openai";
-import {describe, it, expect, beforeAll, expectTypeOf} from "vitest";
+import {describe, it, expect, expectTypeOf} from "vitest";
 
 describe('OpenAISearch', () => {
     it('should create an instance', () => {

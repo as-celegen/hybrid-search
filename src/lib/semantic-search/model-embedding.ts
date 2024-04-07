@@ -1,4 +1,4 @@
-import {Metadata, Search, Document} from "@/lib/search";
+import {Metadata, Search, Document, defaultTopK} from "@/lib/search";
 import { Index } from '@upstash/vector';
 
 export class ModelEmbeddingSearch extends Search {
@@ -21,7 +21,7 @@ export class ModelEmbeddingSearch extends Search {
         this.ready = Promise.resolve(true);
     }
 
-    async search(query: string, topK= 20): Promise<{key: string, title: string, score: number}[]> {
+    async search(query: string, topK= defaultTopK): Promise<{key: string, title: string, score: number}[]> {
         const results = await this.index.query({
             data: query,
             includeMetadata: true,

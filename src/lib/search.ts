@@ -9,6 +9,7 @@ export interface Metadata extends Record<string, unknown> {
 }
 
 export const dimension = 384;
+export const defaultTopK = 20;
 
 export abstract class Search {
     abstract ready: Promise<boolean>;
@@ -16,7 +17,7 @@ export abstract class Search {
     abstract searchType: string;
     useSingleVectorIndex: boolean = process.env.USE_SINGLE_VECTOR_INDEX === 'true';
 
-    async search(query: string, topK= 20): Promise<{key: string, title: string, score: number}[]> {
+    async search(query: string, topK= defaultTopK): Promise<{key: string, title: string, score: number}[]> {
         if (!await this.ready) {
             return [];
         }

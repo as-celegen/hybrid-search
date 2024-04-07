@@ -1,5 +1,5 @@
 import {BM25, WordStatistics} from "@/lib/full-text-search/bm25";
-import {describe, it, expect, beforeAll, expectTypeOf} from "vitest";
+import {describe, it, expect, expectTypeOf} from "vitest";
 import {redis} from "@/context/redis";
 import {dimension} from "@/lib/search";
 

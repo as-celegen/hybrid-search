@@ -8,7 +8,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         return new NextResponse('Key is required', {status: 400});
     }
 
-    const document = await redis.json.get<DocumentStatistics>(key, '$.statistics');
+    const document = await redis.json.get<DocumentStatistics>(`key#${key}`, '$.statistics');
     if (!document) {
         return new NextResponse('Document not found', {status: 404});
     }

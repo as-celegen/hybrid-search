@@ -21,7 +21,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
                 top10ResultQueries: []
             }
         }
-        await redis.set(redisDocument.key, JSON.stringify(redisDocument));
+        await redis.json.set(`key#${redisDocument.key}`, '$', redisDocument as any);
     }));
 
     await redis.sadd('document-keys', ...documents.map(doc => doc.key));

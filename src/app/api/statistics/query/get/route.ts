@@ -8,7 +8,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         return new NextResponse('query is required', {status: 400});
     }
 
-    const queryStatistics = await redis.json.get<QueryStatistics>(`${query}#statistics`);
+    const queryStatistics = await redis.json.get<QueryStatistics>(`statistics#${query}`);
     if (!queryStatistics) {
         return new NextResponse('Query not found', {status: 404});
     }

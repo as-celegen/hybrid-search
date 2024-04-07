@@ -13,7 +13,7 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
     await fullTextSearch.remove(keys);
     await semanticSearch.remove(keys);
 
-    await redis.del(...keys);
+    await redis.del(...keys.map(key => `key#${key}`));
     await redis.srem('document-keys', ...keys);
     return new NextResponse('OK');
 }

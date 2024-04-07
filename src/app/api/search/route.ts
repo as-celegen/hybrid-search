@@ -15,15 +15,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const results = hybridSearch.combineResults(fullTextSearchResults, semanticSearchResults);
 
     results.slice(0, 10).map(result => {
-        redis.json.numincrby(result.key, '$.statistics.top10ResultCount', 1);
-        redis.json.arrappend(result.key, '$.statistics.top10ResultQueries', query);
+        redis.json.numincrby(`key#${result.key}`, '$.statistics.top10ResultCount', 1);
+        redis.json.arrappend(`key#${result.key}`, '$.statistics.top10ResultQueries', query);
     })
-    redis.exists(`${query}#statistics`).then((exists) => {
+    redis.exists(`${query}`).then((exists) => {
         if (exists) {
-            redis.json.numincrby(`${query}#statistics`, '$.searchCount', 1);
-            redis.json.set(`${query}#statistics`, '$.top10Results', results.slice(0, 10));
+            redis.json.numincrby(`statistics#${query}`, '$.searchCount', 1);
+            redis.json.set(`statistics#${query}`, '$.top10Results', results.slice(0, 10));
         } else {
-            redis.json.set(`${query}#statistics`, '$', {
+            redis.json.set(`statistics#${query}`, '$', {
                 searchCount: 1,
                 top10Results: results.slice(0, 10),
                 clickedResults: [],

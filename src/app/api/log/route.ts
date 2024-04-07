@@ -9,11 +9,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         return new NextResponse('Key and query are required', {status: 400});
     }
 
-    await redis.json.numincrby(key, "$.statistics.clickCount", 1);
-    await redis.json.arrappend(key, "$.statistics.clickedQueries", query);
+    await redis.json.numincrby(`key#${key}`, "$.statistics.clickCount", 1);
+    await redis.json.arrappend(`key#${key}`, "$.statistics.clickedQueries", query);
 
-    await redis.json.numincrby(`${query}#statistics`, '$.clickCount', 1);
-    await redis.json.arrappend(`${query}#statistics`, '$.clickedResults', key);
+    await redis.json.numincrby(`statistics#${query}`, '$.clickCount', 1);
+    await redis.json.arrappend(`statistics#${query}`, '$.clickedResults', key);
 
     return new NextResponse('OK');
 }

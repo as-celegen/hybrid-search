@@ -16,7 +16,7 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
     }
     await Promise.all(keys.map(async key => {
         //TODO: Fix type
-        await redis.json.set(key, '$.statistics', defaultStatistics as any);
+        await redis.json.set(`key#${key}`, '$.statistics', defaultStatistics as any);
     }));
 
     return new NextResponse('OK');

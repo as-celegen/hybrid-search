@@ -13,5 +13,5 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         return new NextResponse('Document not found', {status: 404});
     }
 
-    return new NextResponse(document.toString());
+    return new NextResponse(JSON.stringify(document));
 }

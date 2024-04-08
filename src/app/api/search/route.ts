@@ -16,7 +16,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     results.slice(0, 10).map(result => {
         redis.json.numincrby(`key#${result.key}`, '$.statistics.top10ResultCount', 1);
-        redis.json.arrappend(`key#${result.key}`, '$.statistics.top10ResultQueries', query);
+        redis.json.arrappend(`key#${result.key}`, '$.statistics.top10ResultQueries', [query]);
     })
     redis.exists(`${query}`).then((exists) => {
         if (exists) {
@@ -31,5 +31,5 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             });
         }
     });
-    return new NextResponse(results.toString());
+    return new NextResponse(JSON.stringify(results));
 }

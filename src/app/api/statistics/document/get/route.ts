@@ -10,8 +10,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     const document = await redis.json.get<DocumentStatistics>(`key#${key}`, '$.statistics');
     if (!document) {
-        return new NextResponse('Document not found', {status: 404});
+        return new NextResponse(`Document not found. Key: ${key}`, {status: 404});
     }
 
-    return new NextResponse(document.toString());
+    return new NextResponse(JSON.stringify(document));
 }

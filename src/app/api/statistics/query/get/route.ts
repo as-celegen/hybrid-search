@@ -13,5 +13,5 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         return new NextResponse('Query not found', {status: 404});
     }
 
-    return new NextResponse(queryStatistics.toString());
+    return new NextResponse(JSON.stringify(queryStatistics));
 }

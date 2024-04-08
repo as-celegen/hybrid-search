@@ -8,7 +8,7 @@ export interface Metadata extends Record<string, unknown> {
     searchType: string;
 }
 
-export const dimension = 384;
+export const dimension = 1024;
 export const defaultTopK = 20;
 
 export abstract class Search {
@@ -58,7 +58,23 @@ export abstract class Search {
     }
 
     async resetIndex(): Promise<void> {
-        await this.index.reset();
+        if(this.useSingleVectorIndex) {
+            await this.ready;
+            let cursor = "0";
+            while(!isNaN(Number(cursor)) && cursor !== ""){
+                const {nextCursor, vectors} = await this.index.range({cursor, includeVectors: false, includeMetadata: false, limit: 100});
+                const idsToDelete = vectors.map(({id}) => id).filter(id => id.endsWith(this.searchType));
+                if(vectors.length === 0) {
+                    break;
+                }
+                if(idsToDelete.length !== 0) {
+                    await this.index.delete(idsToDelete);
+                }
+                cursor = nextCursor;
+            }
+        }else {
+            await this.index.reset();
+        }
     }
 
     abstract buildIndex(documents: Document | Document[]): Promise<boolean>;

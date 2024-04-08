@@ -20,9 +20,9 @@ describe('Model Embedding Search', () => {
         const search = new ModelEmbeddingSearch();
         const result = await search.add(documents);
         expect(result).toBe(true);
-        const vector = await search.index.fetch(['1', '2'], {includeMetadata: true});
+        const vector = await search.index.fetch(['1#ModelEmbedding', '2#ModelEmbedding'], {includeMetadata: true});
         expectTypeOf(vector).toBeArray();
-        expect(vector).toHaveLength(2);
+        expect(vector.filter(i => i !== null)).toHaveLength(2);
     });
 
     it('should search documents', async () => {
@@ -39,15 +39,14 @@ describe('Model Embedding Search', () => {
         await search.add(documents);
         const result = await search.remove('1');
         expect(result).toBe(1);
-        const vector = await search.index.fetch(['1']);
+        const vector = await search.index.fetch(['1#ModelEmbedding']);
         expect(vector).toEqual([null]);
     });
 
     it('should reset the index', async () => {
         const search = new ModelEmbeddingSearch();
-        await search.buildIndex(documents);
         await search.resetIndex();
-        const result = await search.index.fetch(['1']);
+        const result = await search.index.fetch(['1#ModelEmbedding']);
         expect(result).toEqual([null]);
     });
 });

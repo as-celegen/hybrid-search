@@ -5,6 +5,7 @@ export class ModelEmbeddingSearch extends Search {
     index: Index<Metadata>;
     ready: Promise<boolean>;
     searchType: string = 'ModelEmbedding';
+    dimension: number = 1024;
 
     constructor() {
         super();

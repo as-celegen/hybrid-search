@@ -1,5 +1,5 @@
 import { OpenAI } from 'openai';
-import {Metadata, Search, Document, dimension} from "@/lib/search";
+import {Metadata, Search, Document} from "@/lib/search";
 import { Index } from '@upstash/vector';
 
 export class OpenAISearch extends Search {
@@ -8,6 +8,7 @@ export class OpenAISearch extends Search {
     index: Index<Metadata>;
     ready: Promise<boolean>;
     searchType: string = 'OpenAI';
+    dimension: number = 0;
 
     constructor() {
         super();
@@ -27,7 +28,10 @@ export class OpenAISearch extends Search {
 
         this.model = process.env.OPENAI_MODEL ?? 'text-embedding-3-small';
 
-        this.ready = Promise.resolve(true);
+        this.ready = this.index.info().then((info) => {
+            this.dimension = info.dimension;
+            return true;
+        });
     }
 
     async buildIndex(documents: Document[]): Promise<boolean> {
@@ -39,13 +43,14 @@ export class OpenAISearch extends Search {
     }
 
     async getVector(text: string): Promise<Array<number>> {
+        await this.ready;
         const embedding = await this.openai.embeddings.create({input: text, model: this.model});
         // TODO: Fix the dimension limit
         let vector = embedding.data[0].embedding;
-        if(vector.length > dimension) {
-            vector = vector.slice(0, dimension);
-        } else if(vector.length < dimension) {
-            vector = vector.concat(Array.from({length: dimension - vector.length}, () => 0));
+        if(vector.length > this.dimension) {
+            vector = vector.slice(0, this.dimension);
+        } else if(vector.length < this.dimension) {
+            vector = vector.concat(Array.from({length: this.dimension - vector.length}, () => 0));
         }
         return vector;
     }

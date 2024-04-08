@@ -1,7 +1,6 @@
 import {BM25, WordStatistics} from "@/lib/full-text-search/bm25";
 import {describe, it, expect, expectTypeOf} from "vitest";
 import {redis} from "@/context/redis";
-import {dimension} from "@/lib/search";
 
 const documents = [
     {key: '1', title: 'Hello', document: 'Hello world'},
@@ -47,7 +46,7 @@ describe('BM25 Search', () => {
         console.log(vector);
         expectTypeOf(vector).toBeArray();
         expect(vector.length).toBeGreaterThan(0);
-        const testVector = Array.from({length: dimension}, () => 0);
+        const testVector = Array.from({length: search.dimension}, () => 0);
         const tf = (wordCount: number, length: number) => (search.k+1)* wordCount  / (wordCount + search.k * (1 - search.b + search.b * (length / search.averageDocumentLength)));
         testVector[search.wordStatistics['hello'].index] = tf(1, 2) * search.wordStatistics['hello'].idf;
         testVector[search.wordStatistics['world'].index] = tf(1, 2) * search.wordStatistics['world'].idf;
@@ -58,7 +57,7 @@ describe('BM25 Search', () => {
         const vector = await search.getVectorForSearch('hello world');
         expectTypeOf(vector).toBeArray();
         expect(vector.length).toBeGreaterThan(0);
-        const testVector = Array.from({length: dimension}, () => 0);
+        const testVector = Array.from({length: search.dimension}, () => 0);
         testVector[search.wordStatistics['hello'].index] = 1;
         testVector[search.wordStatistics['world'].index] = 1;
         expect(vector).toEqual(testVector);
@@ -109,4 +108,5 @@ describe('BM25 Search', () => {
         const result = await search.index.fetch(['1#BM25']);
         expect(result).toEqual([null]);
     });
+
 });

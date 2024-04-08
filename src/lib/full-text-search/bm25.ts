@@ -1,4 +1,4 @@
-import {dimension, Document, Metadata, Search} from "@/lib/search";
+import {Document, Metadata, Search} from "@/lib/search";
 import {redis} from "@/context/redis";
 import {Index} from "@upstash/vector";
 
@@ -28,6 +28,7 @@ export class BM25 extends Search {
     numberOfWords: number = 0;
     index: Index<Metadata>;
     searchType: string = 'BM25';
+    dimension: number = 0;
 
 
     constructor(k  = 1.5, b  = 0.75) {
@@ -44,7 +45,8 @@ export class BM25 extends Search {
             });
         }
 
-        this.ready = redis.get<BM25Info>('BM25-info').then((info) => {
+        this.ready = redis.get<BM25Info>('BM25-info').then(async (info) => {
+            this.dimension = (await this.index.info()).dimension;
             if (info) {
                 this.wordStatistics = info.wordStatistics;
                 this.numberOfDocuments = info.numberOfDocuments;
@@ -75,9 +77,9 @@ export class BM25 extends Search {
         this.numberOfDocuments = documents.length;
         this.averageDocumentLength = 0;
         this.wordStatistics = {};
-        documents.map((document) => {
+        documents.forEach(document => {
             const words: string[] = document.document.match(/\w+/g) ?? [];
-            words.map((word) => {
+            words.forEach(word => {
                 word = word.toLowerCase();
                 if (!this.wordStatistics[word]) {
                     this.wordStatistics[word] = {
@@ -92,9 +94,12 @@ export class BM25 extends Search {
         });
         this.averageDocumentLength /= this.numberOfDocuments;
 
-        const allWords = Object.keys(this.wordStatistics).sort();
+// TODO: This is for checking if it is a word in english to fit the dimension, fix this
+        const allWords = Object.keys(this.wordStatistics).filter(word => {
+            return !/\d|_+/g.test(word);
+        }).sort();
 
-        allWords.map((word, index) => {
+        allWords.forEach((word, index) => {
             this.wordStatistics[word].idf = Math.log((this.numberOfDocuments + 1)/(this.wordStatistics[word].numberOfDocumentsContainingWord + 0.5));
             this.wordStatistics[word].index = index;
         });
@@ -126,10 +131,10 @@ export class BM25 extends Search {
         });
         // TODO: Fix the dimension limit
         let resizedVector: number[] = vector;
-        if(vector.length > dimension) {
-            resizedVector = vector.slice(0, dimension);
-        } else if(vector.length < dimension) {
-            resizedVector = vector.concat(Array.from({length: dimension - vector.length}, () => 0));
+        if(vector.length > this.dimension) {
+            resizedVector = vector.slice(0, this.dimension);
+        } else if(vector.length < this.dimension) {
+            resizedVector = vector.concat(Array.from({length: this.dimension - vector.length}, () => 0));
         }
         return resizedVector;
     }
@@ -148,10 +153,10 @@ export class BM25 extends Search {
         });
         // TODO: Fix the dimension limit
         let resizedVector: number[] = vector;
-        if(vector.length > dimension) {
-            resizedVector = vector.slice(0, dimension);
-        } else if(vector.length < dimension) {
-            resizedVector = vector.concat(Array.from({length: dimension - vector.length}, () => 0));
+        if(vector.length > this.dimension) {
+            resizedVector = vector.slice(0, this.dimension);
+        } else if(vector.length < this.dimension) {
+            resizedVector = vector.concat(Array.from({length: this.dimension - vector.length}, () => 0));
         }
         return resizedVector;
     }

@@ -8,13 +8,13 @@ export interface Metadata extends Record<string, unknown> {
     searchType: string;
 }
 
-export const dimension = 1024;
 export const defaultTopK = 20;
 
 export abstract class Search {
     abstract ready: Promise<boolean>;
     abstract index: Index<Metadata>;
     abstract searchType: string;
+    abstract dimension: number;
     useSingleVectorIndex: boolean = process.env.USE_SINGLE_VECTOR_INDEX === 'true';
 
     async search(query: string, topK= defaultTopK): Promise<{key: string, title: string, score: number}[]> {

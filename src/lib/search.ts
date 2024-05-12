@@ -51,6 +51,14 @@ export abstract class SearchIndex<Metadata extends Record<string, unknown> = Rec
         return info;
     }
 
+    async listNamespaces(): Promise<string[]> {
+        return Array.from(new Set(await this.index.listNamespaces().map((namespace) => this.clearNamespace(namespace))));
+    }
+
+    async deleteNamespace(namespace: string): Promise<string> {
+        return await this.index.deleteNamespace(this.addSearchTypeToNamespace(namespace));
+    }
+
     static fromEnv<T extends SearchIndex>(
         this: new (config: IndexConfig) => T,
         config?: Omit<IndexConfig, "url" | "token">

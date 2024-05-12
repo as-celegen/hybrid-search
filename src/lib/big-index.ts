@@ -170,6 +170,15 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
         return info;
     }
 
+    async listNamespaces(): Promise<string[]> {
+        return Array.from(new Set(await this.index.listNamespaces().map((namespace) => this.clearNamespace(namespace))));
+    }
+
+    async deleteNamespace(namespace: string): Promise<string> {
+        const partitions = this.namespacePartitions[namespace] ?? 1;
+        return await Promise.all(Array(partitions).map((_, index) => this.index.deleteNamespace(this.addPartitionInfoToNamespace(namespace, index)))).then(results => results.every(r => r === 'Success') ? 'Success' : 'Failure');
+    }
+
     updateNamespacePartitions(partitions: string[]){
         this.namespacePartitions = partitions.reduce((acc, entry) => {
             if (this.checkNamespace(entry[0])) {

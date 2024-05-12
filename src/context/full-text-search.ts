@@ -1,9 +1,9 @@
-import { BM25 } from "@/lib/full-text-search/bm25";
-import {Search} from "@/lib/search";
+import { BM25Search } from "@/lib/full-text-search/bm25";
+import {SearchIndex} from "@/lib/search";
 
-const fullTextSearchAlgorithms: Record<string, new () => Search> = {
-    "BM25": BM25,
+const fullTextSearchAlgorithms: Record<string, new () => SearchIndex> = {
+    "BM25": BM25Search,
 };
 
 const fullTextSearchType = fullTextSearchAlgorithms[process.env.FULL_TEXT_SEARCH_ALGORITHM ?? 'BM25'] ?? fullTextSearchAlgorithms['BM25'];
-export const fullTextSearch: Search = new fullTextSearchType();
+export const fullTextSearch: SearchIndex = new fullTextSearchType();

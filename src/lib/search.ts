@@ -1,84 +1,72 @@
-import { Index } from "@upstash/vector";
+import {FetchResult, Index, IndexConfig, InfoResult, QueryResult, RangeResult} from "@upstash/vector";
+import {
+    CommandOptions,
+    DeleteCommandPayload,
+    FetchCommandPayload, IndexFunctions,
+    QueryCommandPayload, RangeCommandPayload,
+    UpsertCommandPayload
+} from "@/types/vector";
 
-export type Document = {key: string, title: string, document: string};
+export abstract class SearchIndex<Metadata extends Record<string, unknown> = Record<string, unknown>> implements IndexFunctions<Metadata>{
+    protected abstract searchType: string;
+    private index: IndexFunctions<Metadata>;
+    private addSearchTypeToNamespace = (namespace: string): string => namespace + '.' + this.searchType;
+    private checkNamespace = (namespace: string): boolean => namespace.endsWith('.' + this.searchType);
+    private clearNamespace = (namespace: string): string => namespace.replace('.' + this.searchType, '');
 
-export interface Metadata extends Record<string, unknown> {
-    key: string;
-    title: string;
-    searchType: string;
-}
-
-export const defaultTopK = 20;
-
-export abstract class Search {
-    abstract ready: Promise<boolean>;
-    abstract index: Index<Metadata>;
-    abstract searchType: string;
-    abstract dimension: number;
-    useSingleVectorIndex: boolean = process.env.USE_SINGLE_VECTOR_INDEX === 'true';
-
-    async search(query: string, topK= defaultTopK): Promise<{key: string, title: string, score: number}[]> {
-        if (!await this.ready) {
-            return [];
+    constructor(configOrIndex: IndexConfig | IndexFunctions<Metadata>) {
+        if('upsert' in configOrIndex){
+            this.index = configOrIndex;
+        } else {
+            this.index = new Index(configOrIndex);
         }
-        const vector = await this.getVectorForSearch(query);
-        const results = await this.index.query({
-            vector,
-            includeMetadata: true,
-            topK,
-            filter: this.useSingleVectorIndex ? `searchType = "${this.searchType}"` : undefined,
-        });
-        return results.map((result) => ({
-            key: result.metadata?.key ?? result.id.toString(),
-            title: result.metadata?.title ?? "Unknown title",
-            score: result.score,
-        }));
-    }
-    async add(document: Document | Document[]): Promise<boolean> {
-        if (!await this.ready) {
-            return false;
-        }
-        const documents = Array.isArray(document) ? document : [document];
-        return 'Success' === await this.index.upsert(await Promise.all(documents.map(async (doc) => ({
-            id: `${doc.key}#${this.searchType}`,
-            vector: await this.getVector(doc.document),
-            metadata: {
-                key: doc.key,
-                title: doc.title,
-                searchType: this.searchType,
-            },
-        }))));
-    }
-    async remove(key: string | string[]): Promise<number> {
-        if (!await this.ready) {
-            return 0;
-        }
-        const keys = Array.isArray(key) ? key : [key];
-        return (await this.index.delete(keys.map((id => `${id}#${this.searchType}`)))).deleted;
     }
 
-    async resetIndex(): Promise<void> {
-        if(this.useSingleVectorIndex) {
-            await this.ready;
-            let cursor = "0";
-            while(!isNaN(Number(cursor)) && cursor !== ""){
-                const {nextCursor, vectors} = await this.index.range({cursor, includeVectors: false, includeMetadata: false, limit: 100});
-                const idsToDelete = vectors.map(({id}) => id).filter(id => id.endsWith(this.searchType));
-                if(vectors.length === 0) {
-                    break;
-                }
-                if(idsToDelete.length !== 0) {
-                    await this.index.delete(idsToDelete);
-                }
-                cursor = nextCursor;
+    async delete(args: DeleteCommandPayload, options?: CommandOptions): Promise<{deleted: number}>{
+        return await this.index.delete(args, {namespace: this.addSearchTypeToNamespace(options?.namespace ?? "")});
+    }
+    async query<TMetadata extends Record<string, unknown> = Metadata>(args: QueryCommandPayload, options?: CommandOptions): Promise<QueryResult<TMetadata>[]>{
+        return await this.index.query(args, {namespace: this.addSearchTypeToNamespace(options?.namespace ?? "")});
+    }
+    async upsert<TMetadata extends Record<string, unknown> = Metadata>(args: UpsertCommandPayload<TMetadata>, options?: CommandOptions): Promise<string>{
+        return await this.index.upsert<Record<string, unknown>>(args, {namespace: this.addSearchTypeToNamespace(options?.namespace ?? "")});
+    }
+    async fetch<TMetadata extends Record<string, unknown> = Metadata>(args: FetchCommandPayload, options?: CommandOptions): Promise<FetchResult<TMetadata>[]>{
+        return await this.index.fetch(args, {namespace: this.addSearchTypeToNamespace(options?.namespace ?? "")});
+    }
+    async reset(options?:CommandOptions): Promise<string>{
+        return await this.index.reset({namespace: this.addSearchTypeToNamespace(options?.namespace ?? "")});
+    }
+    async range<TMetadata extends Record<string, unknown> = Metadata>(args: RangeCommandPayload, options?: CommandOptions): Promise<RangeResult<TMetadata>>{
+        return await this.index.range(args, {namespace: this.addSearchTypeToNamespace(options?.namespace ?? "")});
+    }
+    async info(): Promise<InfoResult>{
+        const info = await this.index.info();
+        info.namespaces = Object.entries(info.namespaces).reduce((acc, entry) => {
+            if (this.checkNamespace(entry[0])) {
+                acc[this.clearNamespace(entry[0])] = entry[1];
             }
-        }else {
-            await this.index.reset();
-        }
+            return acc;
+        }, {} as InfoResult["namespaces"]);
+        return info;
     }
 
-    abstract buildIndex(documents: Document | Document[]): Promise<boolean>;
-    abstract prepareIndex(documents: Document | Document[]): Promise<boolean>;
-    abstract getVector(text: string): Promise<Array<number>>;
-    abstract getVectorForSearch(text: string): Promise<Array<number>>;
+    static fromEnv<T extends SearchIndex>(
+        this: new (config: IndexConfig) => T,
+        config?: Omit<IndexConfig, "url" | "token">
+    ): T {
+        const url = process?.env.UPSTASH_VECTOR_REST_URL;
+        if (!url) {
+            throw new Error(
+                "Unable to find environment variable: `UPSTASH_VECTOR_REST_URL`"
+            );
+        }
+        const token = process?.env.UPSTASH_VECTOR_REST_TOKEN;
+        if (!token) {
+            throw new Error(
+                "Unable to find environment variable: `UPSTASH_VECTOR_REST_TOKEN`"
+            );
+        }
+        return new this({ ...config, url, token });
+    }
 }

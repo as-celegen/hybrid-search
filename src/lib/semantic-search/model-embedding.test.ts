@@ -18,7 +18,7 @@ describe('Model Embedding Search', () => {
 
     it('should add documents', async () => {
         const search = new ModelEmbeddingSearch();
-        const result = await search.add(documents);
+        const result = await search.upsert(documents);
         expect(result).toBe(true);
         const vector = await search.index.fetch(['1#ModelEmbedding', '2#ModelEmbedding'], {includeMetadata: true});
         expectTypeOf(vector).toBeArray();
@@ -28,7 +28,7 @@ describe('Model Embedding Search', () => {
     it('should search documents', async () => {
         const search = new ModelEmbeddingSearch();
         await new Promise(resolve => setTimeout(resolve, 10000));
-        const results = await search.search('hello');
+        const results = await search.query('hello');
         expectTypeOf(results).toBeArray();
         console.log(results);
         expect(results.length).toBeGreaterThan(0);
@@ -36,8 +36,8 @@ describe('Model Embedding Search', () => {
 
     it('should remove documents', async () => {
         const search = new ModelEmbeddingSearch();
-        await search.add(documents);
-        const result = await search.remove('1');
+        await search.upsert(documents);
+        const result = await search.delete('1');
         expect(result).toBe(1);
         const vector = await search.index.fetch(['1#ModelEmbedding']);
         expect(vector).toEqual([null]);
@@ -45,7 +45,7 @@ describe('Model Embedding Search', () => {
 
     it('should reset the index', async () => {
         const search = new ModelEmbeddingSearch();
-        await search.resetIndex();
+        await search.reset();
         const result = await search.index.fetch(['1#ModelEmbedding']);
         expect(result).toEqual([null]);
     });

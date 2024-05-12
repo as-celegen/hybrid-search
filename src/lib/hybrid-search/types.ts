@@ -1,9 +1,5 @@
-export interface Result {
-    key: string;
-    score: number;
-    [key: string]: any;
-}
+import {QueryResult} from "@upstash/vector";
 
 export abstract class HybridSearch {
-    abstract combineResults(...results: Result[][]): Result[];
+    abstract combineResults(...results: QueryResult[][]): QueryResult[];
 }

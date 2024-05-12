@@ -1,61 +1,39 @@
 import { MinMaxNormalization } from "@/lib/hybrid-search/min-max-normalization";
 import {describe, it, expect} from "vitest";
+import {result1, result2, result3} from "@/lib/hybrid-search/utils.test";
 
-const result1 = [
-    {
-        key: 'a',
-        title: 'A',
-        score: 0.7,
-    },
-    {
-        key: 'b',
-        title: 'B',
-        score: 0.8,
-    },
-    {
-        key: 'c',
-        title: 'C',
-        score: 0.9,
-    },
-];
+
 
 describe('MinMaxNormalization', () => {
     it('should combine results', () => {
         const minMaxNormalization = new MinMaxNormalization();
 
-        const result2 = [
-            {
-                key: 'a',
-                title: 'A',
-                score: 0.6,
-            },
-            {
-                key: 'b',
-                title: 'B',
-                score: 0.7,
-            },
-            {
-                key: 'c',
-                title: 'C',
-                score: 0.8,
-            },
-        ]
+
         const combinedResults = minMaxNormalization.combineResults(result1, result2);
         expect(combinedResults).toEqual([
             {
-                key: 'c',
-                title: 'C',
+                id: 'c',
                 score: 2.0,
+                vector: [],
+                metadata: {
+                    title: 'C',
+                }
             },
             {
-                key: 'b',
-                title: 'B',
+                id: 'b',
                 score: 1.0,
+                vector: [],
+                metadata: {
+                    title: 'B',
+                }
             },
             {
-                key: 'a',
-                title: 'A',
+                id: 'a',
                 score: 0,
+                vector: [],
+                metadata: {
+                    title: 'A',
+                }
             }
         ]);
     });
@@ -63,39 +41,32 @@ describe('MinMaxNormalization', () => {
     it('should combine results', () => {
         const minMaxNormalization = new MinMaxNormalization();
 
-        const result2 = [
-            {
-                key: 'a',
-                title: 'A',
-                score: 0.8,
-            },
-            {
-                key: 'b',
-                title: 'B',
-                score: 0.7,
-            },
-            {
-                key: 'c',
-                title: 'C',
-                score: 0.6,
-            },
-        ]
-        const combinedResults = minMaxNormalization.combineResults(result1, result2);
+
+        const combinedResults = minMaxNormalization.combineResults(result1, result3);
         expect(combinedResults).toEqual([
             {
-                key: 'c',
-                title: 'C',
+                id: 'c',
                 score: 1.0,
+                vector: [],
+                metadata: {
+                    title: 'C',
+                }
             },
             {
-                key: 'b',
-                title: 'B',
+                id: 'b',
                 score: 1.0,
+                vector: [],
+                metadata: {
+                    title: 'B',
+                }
             },
             {
-                key: 'a',
-                title: 'A',
+                id: 'a',
                 score: 1.0,
+                vector: [],
+                metadata: {
+                    title: 'A',
+                }
             }
         ]);
     });

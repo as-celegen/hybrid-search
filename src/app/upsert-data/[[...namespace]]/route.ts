@@ -1,28 +1,21 @@
 import { fullTextSearch } from '@/context/full-text-search';
 import {semanticSearch} from "@/context/semantic-search";
 import {NextRequest, NextResponse} from "next/server";
-import { RedisDocument } from "@/types/document";
-import { redis } from '@/context/redis';
+import {VectorWithData} from "@/lib/full-text-search/bm25";
 
-export async function POST(req: NextRequest): Promise<NextResponse> {
+export async function POST(req: NextRequest, { params }: { params?: { namespace: string[] } }): Promise<NextResponse> {
     const body = await req.json();
-    const documents: Document[] = Array.isArray(body) ? body : [body];
-    await fullTextSearch.upsert(documents);
-    await semanticSearch.upsert(documents);
+    if (!body) {
+        return new NextResponse('Body is required', {status: 400});
+    }
+    if((!Array.isArray(body) && (!body.id || !body.data))
+        || (Array.isArray(body) && body.some(doc => !doc.id || !doc.data))
+    ) {
+        return new NextResponse('Missing body fields', {status: 400});
+    }
+    const documents: VectorWithData[] = Array.isArray(body) ? body : [body];
+    const namespace = params?.namespace.join('/') ?? "";
+    await Promise.all([semanticSearch.upsert(documents, {namespace}), fullTextSearch.upsert(documents, {namespace})]);
 
-    await Promise.all(documents.map(async (doc) => {
-        const redisDocument: RedisDocument = {
-            ...doc,
-            statistics: {
-                clickCount: 0,
-                clickedQueries: [],
-                top10ResultCount: 0,
-                top10ResultQueries: []
-            }
-        }
-        await redis.json.set(`key#${redisDocument.id}`, '$', redisDocument as any);
-    }));
-
-    await redis.sadd('document-keys', ...documents.map(doc => doc.id));
-    return new NextResponse('OK');
+    return NextResponse.json({result: 'Success'});
 }

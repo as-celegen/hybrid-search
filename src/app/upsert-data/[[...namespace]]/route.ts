@@ -1,19 +1,14 @@
 import { fullTextSearch } from '@/context/full-text-search';
 import {semanticSearch} from "@/context/semantic-search";
-import { Document } from '@/lib/search';
 import {NextRequest, NextResponse} from "next/server";
 import { RedisDocument } from "@/types/document";
 import { redis } from '@/context/redis';
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-    const documents: Document[] = await req.json();
-
-    if (!documents || !Array.isArray(documents) || documents.length === 0){
-        return new NextResponse('Document is required', {status: 400});
-    }
-
-    await fullTextSearch.buildIndex(documents);
-    await semanticSearch.buildIndex(documents);
+    const body = await req.json();
+    const documents: Document[] = Array.isArray(body) ? body : [body];
+    await fullTextSearch.upsert(documents);
+    await semanticSearch.upsert(documents);
 
     await Promise.all(documents.map(async (doc) => {
         const redisDocument: RedisDocument = {
@@ -25,9 +20,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
                 top10ResultQueries: []
             }
         }
-        await redis.json.set(`key#${redisDocument.key}`, '$', redisDocument as Object as Record<string, unknown>);
+        await redis.json.set(`key#${redisDocument.id}`, '$', redisDocument as any);
     }));
 
-    await redis.sadd('document-keys', ...documents.map(doc => doc.key));
+    await redis.sadd('document-keys', ...documents.map(doc => doc.id));
     return new NextResponse('OK');
 }

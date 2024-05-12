@@ -10,13 +10,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         return new NextResponse('Query is required', {status: 400});
     }
 
-    const fullTextSearchResults = await fullTextSearch.search(query);
-    const semanticSearchResults = await semanticSearch.search(query);
+    const fullTextSearchResults = await fullTextSearch.query(query);
+    const semanticSearchResults = await semanticSearch.query(query);
     const results = hybridSearch.combineResults(fullTextSearchResults, semanticSearchResults);
 
     results.slice(0, 10).map(result => {
-        redis.json.numincrby(`key#${result.key}`, '$.statistics.top10ResultCount', 1);
-        redis.json.arrappend(`key#${result.key}`, '$.statistics.top10ResultQueries', [query]);
+        redis.json.numincrby(`key#${result.id}`, '$.statistics.top10ResultCount', 1);
+        redis.json.arrappend(`key#${result.id}`, '$.statistics.top10ResultQueries', [query]);
     })
     redis.exists(`${query}`).then((exists) => {
         if (exists) {

@@ -7,6 +7,9 @@ export async function GET(req: NextRequest, { params }: { params?: { namespace: 
     if (!query) {
         return new NextResponse('Query is required', {status: 400});
     }
+    if(!('topK' in query) || !('data' in query)) {
+        return new NextResponse('Query must contain topK and data fields', {status: 400});
+    }
     const namespace = params?.namespace.join('/') ?? "";
 
     const [semanticSearchResults, fullTextSearchResults] = await Promise.all([

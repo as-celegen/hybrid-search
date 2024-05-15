@@ -100,12 +100,14 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
     }
 
     async upsert<TMetadata extends Record<string, unknown> = Metadata>(args: UpsertCommandPayload<TMetadata>, options?:CommandOptions): Promise<string> {
+        const namespace = options?.namespace ?? "";
+
         if(Array.isArray(args) && args.length === 0) {
             return 'Success';
         }
         if((Array.isArray(args) && !('data' in args[0])) || (!Array.isArray(args) && !('data' in args))) {
             if(!Array.isArray(args) && !('vector' in args)) {
-                redis.json.set((options?.namespace ?? "") + '.' + args.id, '$.metadata', args.metadata as any);
+                await redis.json.set((options?.namespace ?? "") + '.' + args.id, '$.metadata', args.metadata as any);
             } else if(Array.isArray(args)){
                 const pipeline = redis.pipeline();
                 args.forEach(v => {
@@ -120,7 +122,6 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         // @ts-ignore
         // Typescript does not support the key check for 'data' from above line
         const argsWithData: VectorWithData<TMetadata>[] = Array.isArray(args) ? args : [args];
-        const namespace = options?.namespace ?? "";
         if(!await this.ready){
             return 'Failed';
         }

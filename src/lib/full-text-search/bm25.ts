@@ -124,6 +124,13 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         if(!await this.ready){
             return 'Failed';
         }
+
+        const existingDocuments = await redis.smismember('BM25.' + namespace, argsWithData.map(d => d.id));
+        const existingDocumentsWithData = existingDocuments.map((d, i) => d ? argsWithData[i] : null).filter(d => d !== null);
+        if(existingDocumentsWithData.length > 0) {
+            await this.removeTokensFromStatistics(existingDocumentsWithData.map(d => d !== null ? this.tokenizer(d.data) : []), namespace);
+        }
+
         await this.addTokensToStatistics(argsWithData.map(d => this.tokenizer(d.data)), namespace);
 
         let indexedNumberOfDocuments = this.BM25Statistics[namespace]?.indexedNumberOfDocuments ?? 0;

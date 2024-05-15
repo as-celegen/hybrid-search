@@ -10,9 +10,9 @@ import {
 export abstract class SearchIndex<Metadata extends Record<string, unknown> = Record<string, unknown>> implements IndexFunctions<Metadata>{
     protected abstract searchType: string;
     private index: IndexFunctions<Metadata>;
-    private addSearchTypeToNamespace = (namespace: string): string => namespace + '.' + this.searchType;
-    private checkNamespace = (namespace: string): boolean => namespace.endsWith('.' + this.searchType);
-    private clearNamespace = (namespace: string): string => namespace.replace('.' + this.searchType, '');
+    private addSearchTypeToNamespace = (namespace: string): string => namespace + '%20' + this.searchType;
+    private checkNamespace = (namespace: string): boolean => namespace.endsWith(' ' + this.searchType);
+    private clearNamespace = (namespace: string): string => namespace.replace(' ' + this.searchType, '');
 
     constructor(configOrIndex: IndexConfig | IndexFunctions<Metadata>) {
         if('upsert' in configOrIndex){

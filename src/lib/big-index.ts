@@ -1,7 +1,7 @@
 import {FetchResult, Index, IndexConfig, InfoResult, QueryResult, RangeResult, Vector} from "@upstash/vector";
 import {
     CommandOptions,
-    DeleteCommandPayload,
+    DeleteCommandPayload, FetchCommandOptions,
     FetchCommandPayload, IndexFunctions,
     QueryCommandPayload, RangeCommandPayload,
     UpsertCommandPayload
@@ -13,10 +13,10 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
     private index: IndexFunctions<Metadata>;
     private namespacePartitions: Record<string, number> = {};
 
-    private addPartitionInfoToNamespace = (namespace: string, partition: number | string): string => partition === 0 ? namespace : namespace + '.' + partition + '.BigIndex';
-    private checkNamespace = (namespace: string): boolean => namespace.endsWith('.BigIndex');
-    private clearNamespace = (namespace: string): string => namespace.replace(/\.\d*\.BigIndex$/, '');
-    private getPartition = (namespace: string): number => parseInt(namespace.match(/\.(\d*)\.BigIndex$/)?.[1] ?? '0');
+    private addPartitionInfoToNamespace = (namespace: string, partition: number | string): string => partition === 0 ? namespace : namespace + '%20' + partition + '%20BigIndex';
+    private checkNamespace = (namespace: string): boolean => namespace.endsWith(' BigIndex');
+    private clearNamespace = (namespace: string): string => namespace.replace(/ \d* BigIndex$/, '');
+    private getPartition = (namespace: string): number => parseInt(namespace.match(/ (\d*) BigIndex$/)?.[1] ?? '0');
 
 
     similarityMetric: "COSINE" | "EUCLIDEAN" | "DOT_PRODUCT" = 'DOT_PRODUCT';
@@ -91,11 +91,11 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
         const argsArray:{
             id: string | number;
             vector: number[];
-            metadata?: Record<string, unknown> | undefined
+            metadata?: Record<string, unknown>;
         }[] | {
             id: string | number;
             vector: undefined;
-            metadata: Record<string, unknown> | undefined
+            metadata: Record<string, unknown>;
         }[] = Array.isArray(args) ? args : [args];
         this.namespacePartitions[options?.namespace ?? ""] = Math.max(
             this.namespacePartitions[options?.namespace ?? ""] ?? 0,
@@ -126,12 +126,12 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
         return (results.every(result => result === 'Success')) ? 'Success' : 'Failure';
     }
 
-    async fetch<TMetadata extends Record<string, unknown> = Metadata>([ids, opts]: FetchCommandPayload, options?: CommandOptions): Promise<FetchResult<TMetadata>[]> {
+    async fetch<TMetadata extends Record<string, unknown> = Metadata>(ids: FetchCommandPayload, opts?: FetchCommandOptions): Promise<FetchResult<TMetadata>[]> {
         if(opts?.includeVectors === false){
-            return await this.index.fetch<TMetadata>([ids, opts], options);
+            return await this.index.fetch<TMetadata>(ids, opts);
         }
-        const results = await Promise.all(Array(this.namespacePartitions[options?.namespace ?? ""] ?? 1)
-            .map((_, index) => this.index.fetch<TMetadata>([ids, opts], {namespace: this.addPartitionInfoToNamespace(options?.namespace ?? "", index)}))
+        const results = await Promise.all(Array(this.namespacePartitions[opts?.namespace ?? ""] ?? 1)
+            .map((_, index) => this.index.fetch<TMetadata>(ids, {...opts, namespace: this.addPartitionInfoToNamespace(opts?.namespace ?? "", index)}))
         );
         return results.reduce(this.combineNamespaces, []);
     }
@@ -150,7 +150,7 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
         const ids = results.vectors.map((result) => result.id);
 
         const vectors = await Promise.all(Array(this.namespacePartitions[options?.namespace ?? ""] ?? 1)
-            .map((_, index) => this.index.fetch<TMetadata>([ids, {includeVectors: true}], {namespace: this.addPartitionInfoToNamespace(options?.namespace ?? "", index)}))
+            .map((_, index) => this.index.fetch<TMetadata>(ids,  {includeVectors: true, namespace: this.addPartitionInfoToNamespace(options?.namespace ?? "", index)}))
         );
         return vectors.reduce((acc, result) => {
             return {
@@ -171,7 +171,7 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
     }
 
     async listNamespaces(): Promise<string[]> {
-        return Array.from(new Set(await this.index.listNamespaces().map((namespace) => this.clearNamespace(namespace))));
+        return Array.from(new Set((await this.index.listNamespaces()).map((namespace) => this.clearNamespace(namespace))));
     }
 
     async deleteNamespace(namespace: string): Promise<string> {

@@ -1,7 +1,7 @@
 import {FetchResult, Index, IndexConfig, InfoResult, QueryResult, RangeResult} from "@upstash/vector";
 import {
     CommandOptions,
-    DeleteCommandPayload,
+    DeleteCommandPayload, FetchCommandOptions,
     FetchCommandPayload, IndexFunctions,
     QueryCommandPayload, RangeCommandPayload,
     UpsertCommandPayload
@@ -31,8 +31,8 @@ export abstract class SearchIndex<Metadata extends Record<string, unknown> = Rec
     async upsert<TMetadata extends Record<string, unknown> = Metadata>(args: UpsertCommandPayload<TMetadata>, options?: CommandOptions): Promise<string>{
         return await this.index.upsert<Record<string, unknown>>(args, {namespace: this.addSearchTypeToNamespace(options?.namespace ?? "")});
     }
-    async fetch<TMetadata extends Record<string, unknown> = Metadata>(args: FetchCommandPayload, options?: CommandOptions): Promise<FetchResult<TMetadata>[]>{
-        return await this.index.fetch(args, {namespace: this.addSearchTypeToNamespace(options?.namespace ?? "")});
+    async fetch<TMetadata extends Record<string, unknown> = Metadata>(args: FetchCommandPayload, options?: FetchCommandOptions): Promise<FetchResult<TMetadata>[]>{
+        return await this.index.fetch(args, {...options, namespace: this.addSearchTypeToNamespace(options?.namespace ?? "")});
     }
     async reset(options?:CommandOptions): Promise<string>{
         return await this.index.reset({namespace: this.addSearchTypeToNamespace(options?.namespace ?? "")});
@@ -52,7 +52,7 @@ export abstract class SearchIndex<Metadata extends Record<string, unknown> = Rec
     }
 
     async listNamespaces(): Promise<string[]> {
-        return Array.from(new Set(await this.index.listNamespaces().map((namespace) => this.clearNamespace(namespace))));
+        return Array.from(new Set((await this.index.listNamespaces()).map((namespace) => this.clearNamespace(namespace))));
     }
 
     async deleteNamespace(namespace: string): Promise<string> {

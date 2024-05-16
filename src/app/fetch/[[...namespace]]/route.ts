@@ -12,10 +12,10 @@ export async function GET(req: NextRequest, { params }: { params?: { namespace: 
     const keys = payload.ids;
     const includeMetadata = payload.includeMetadata;
     const includeVectors = payload.includeVectors;
-    const keysArray = (Array.isArray(keys) ? keys : [keys]).flatMap(key => typeof key === 'string' || typeof key === 'number' ? key : []);
+    const keysArray = (Array.isArray(keys) ? keys : [keys]).flatMap(key => typeof key === 'string' || typeof key === 'number' ? key.toString() : []);
     const namespace = params?.namespace.join('/') ?? "";
 
-    const documents = semanticSearch.fetch([keysArray, {includeMetadata, includeVectors}], {namespace});
+    const documents = semanticSearch.fetch(keysArray, {namespace, includeMetadata, includeVectors});
 
     return NextResponse.json({result: documents});
 }

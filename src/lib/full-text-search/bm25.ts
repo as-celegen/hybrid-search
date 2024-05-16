@@ -139,19 +139,25 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         const numberOfDocuments = this.BM25Statistics[namespace]?.numberOfDocuments ?? 0;
         const totalDocumentLength = this.BM25Statistics[namespace]?.totalDocumentLength ?? 0;
 
-        if(
+        const checkIfRebuildIsNeeded = () => (
             indexedNumberOfDocuments === 0 || indexedTotalDocumentLength === 0 || (
                 indexedNumberOfDocuments * 2 < numberOfDocuments &&
                 Math.abs((indexedTotalDocumentLength / indexedNumberOfDocuments) - (totalDocumentLength / numberOfDocuments)) > (indexedTotalDocumentLength / indexedNumberOfDocuments) * 0.1
-            )) {
-            this.BM25Statistics[namespace].indexedNumberOfDocuments = this.BM25Statistics[namespace].numberOfDocuments;
-            this.BM25Statistics[namespace].indexedTotalDocumentLength = this.BM25Statistics[namespace].totalDocumentLength;
-            const pipeline = redis.pipeline();
-            pipeline.json.set('BM25-info', '$.' + namespace + '.indexedNumberOfDocuments', this.BM25Statistics[namespace].indexedNumberOfDocuments);
-            pipeline.json.set('BM25-info', '$.' + namespace + '.indexedTotalDocumentLength', this.BM25Statistics[namespace].indexedTotalDocumentLength);
-            await pipeline.exec();
-            if(indexedNumberOfDocuments !== 0){
-                await this.updateOldVectors(namespace);
+            ));
+
+        if(checkIfRebuildIsNeeded()) {
+            this.BM25Statistics[namespace].indexedNumberOfDocuments = await redis.json.get<number>('BM25-info', '$.' + namespace + '.indexedNumberOfDocuments') ?? 0;
+            this.BM25Statistics[namespace].indexedTotalDocumentLength = await redis.json.get<number>('BM25-info', '$.' + namespace + '.indexedTotalDocumentLength') ?? 0;
+            if(checkIfRebuildIsNeeded()) {
+                this.BM25Statistics[namespace].indexedNumberOfDocuments = this.BM25Statistics[namespace].numberOfDocuments;
+                this.BM25Statistics[namespace].indexedTotalDocumentLength = this.BM25Statistics[namespace].totalDocumentLength;
+                const pipeline = redis.pipeline();
+                pipeline.json.set('BM25-info', '$.' + namespace + '.indexedNumberOfDocuments', this.BM25Statistics[namespace].indexedNumberOfDocuments);
+                pipeline.json.set('BM25-info', '$.' + namespace + '.indexedTotalDocumentLength', this.BM25Statistics[namespace].indexedTotalDocumentLength);
+                await pipeline.exec();
+                if (indexedNumberOfDocuments !== 0) {
+                    await this.updateOldVectors(namespace);
+                }
             }
         }
 

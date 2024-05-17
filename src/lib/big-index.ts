@@ -12,8 +12,9 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
     private dimension: number = 0;
     private index: IndexFunctions<Metadata>;
     private namespacePartitions: Record<string, number> = {};
+    private ready: Promise<boolean>;
 
-    private addPartitionInfoToNamespace = (namespace: string, partition: number | string): string => partition === 0 ? namespace : namespace + '%20' + partition + '%20BigIndex';
+    private addPartitionInfoToNamespace = (namespace: string, partition: number | string): string => (partition === 0 || partition === '0') ? namespace : namespace + '%20' + partition + '%20BigIndex';
     private checkNamespace = (namespace: string): boolean => namespace.endsWith(' BigIndex');
     private clearNamespace = (namespace: string): string => namespace.replace(/ \d* BigIndex$/, '');
     private getPartition = (namespace: string): number => parseInt(namespace.match(/ (\d*) BigIndex$/)?.[1] ?? '0');
@@ -29,7 +30,7 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
         }
 
 
-        this.index.info().then(async info => {
+        this.ready = this.index.info().then(async info => {
             this.similarityMetric = info.similarityFunction;
             this.dimension = info.dimension;
 
@@ -40,18 +41,20 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
     }
 
     async delete(args: DeleteCommandPayload, options?: CommandOptions): Promise<{ deleted: number; }> {
+        if(!await this.ready){
+            return {deleted: 0};
+        }
         const results = await Promise.all(
-            Array(this.namespacePartitions[options?.namespace ?? ""] ?? 1)
+            Array(this.namespacePartitions[options?.namespace ?? ""] ?? 1).fill(0)
                 .map((_, index) => this.index.delete(args, {namespace: this.addPartitionInfoToNamespace(options?.namespace ?? "", index)}))
         );
-
         return {
             deleted: results.reduce((acc, result) => Math.max(acc, result.deleted), 0)
         };
     }
 
     async query<TMetadata extends Record<string, unknown> = Metadata>(args: QueryCommandPayload, options?: CommandOptions): Promise<QueryResult<TMetadata>[]> {
-        if(this.dimension === 0){
+        if(!await this.ready || this.dimension === 0){
             return [];
         }
         if('data' in args){
@@ -76,11 +79,11 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
             Object.entries(argsArray)
                 .map(arg => this.index.query<TMetadata>(arg[1], {namespace: this.addPartitionInfoToNamespace(options?.namespace ?? "", arg[0])}))
         );
-        return results.reduce(this.combineResultNamespaces, []).sort((a, b) => b.score - a.score);
+        return results.reduce((a, b) => this.combineResultNamespaces(a, b), []).sort((a, b) => b.score - a.score);
     }
 
     async upsert<TMetadata extends Record<string, unknown> = Metadata>(args: UpsertCommandPayload<TMetadata>, options?: CommandOptions): Promise<string> {
-        if(this.dimension === 0 || (Array.isArray(args) && args.length === 0)){
+        if(!await this.ready || this.dimension === 0 || (Array.isArray(args) && args.length === 0)){
             return 'Failed';
         }
         if((!Array.isArray(args) && 'data' in args) || (Array.isArray(args) && 'data' in args[0])){
@@ -104,7 +107,7 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
         const partitionCount = this.namespacePartitions[options?.namespace ?? ""];
         const argsWithJustMetadata = argsArray.flatMap((arg) => arg.vector === undefined ? [arg] : []);
         const argsWithVectors = argsArray.flatMap((arg) => (arg.vector !== undefined) ? [arg] : []);
-        const partitionedVectors = Array(partitionCount).map((_, index) => {
+        const partitionedVectors = Array(partitionCount).fill(0).map((_, index) => {
             return argsWithVectors.map((arg) => {
                 let vector = arg.vector.slice(index * this.dimension, (index + 1) * this.dimension);
                 if(vector.length < this.dimension){
@@ -116,19 +119,21 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
                 };
             });
         });
-
         const results = await Promise.all(partitionedVectors.map((vectors, index) =>{
             if(vectors.length === 0){
                 return 'Success';
             }
             return this.index.upsert<Record<string, unknown>>([...vectors, ...argsWithJustMetadata], {namespace: this.addPartitionInfoToNamespace(options?.namespace ?? "", index)});
         }));
-        return (results.every(result => result === 'Success')) ? 'Success' : 'Failure';
+        return results.every(r => r === 'Success') ? 'Success' : 'Failure';
     }
 
     async fetch<TMetadata extends Record<string, unknown> = Metadata>(ids: FetchCommandPayload, opts?: FetchCommandOptions): Promise<FetchResult<TMetadata>[]> {
         if(opts?.includeVectors === false){
             return await this.index.fetch<TMetadata>(ids, opts);
+        }
+        if(!await this.ready){
+            return Array(ids.length).fill(null);
         }
         const results = await Promise.all(Array(this.namespacePartitions[opts?.namespace ?? ""] ?? 1)
             .map((_, index) => this.index.fetch<TMetadata>(ids, {...opts, namespace: this.addPartitionInfoToNamespace(opts?.namespace ?? "", index)}))
@@ -137,7 +142,10 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
     }
 
     async reset(options?: CommandOptions): Promise<string> {
-        return await Promise.all(Array(this.namespacePartitions[options?.namespace ?? ""] ?? 1).map(
+        if(!await this.ready){
+            return 'Failed';
+        }
+        return await Promise.all(Array(this.namespacePartitions[options?.namespace ?? ""] ?? 1).fill(0).map(
             (_, index) => this.index.reset({namespace: this.addPartitionInfoToNamespace(options?.namespace ?? "", index)}))
         ).then(results => results.every(r => r === 'Success') ? 'Success' : 'Failure');
     }
@@ -145,6 +153,12 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
     async range<TMetadata extends Record<string, unknown> = Metadata>(args: RangeCommandPayload, options?: CommandOptions): Promise<RangeResult<TMetadata>>  {
         if(args.includeVectors === false){
             return await this.index.range<TMetadata>(args, options);
+        }
+        if(!await this.ready){
+            return {
+                vectors: [],
+                nextCursor: '0',
+            };
         }
         const results = await this.index.range<TMetadata>(args, options);
         const ids = results.vectors.map((result) => result.id);
@@ -175,13 +189,17 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
     }
 
     async deleteNamespace(namespace: string): Promise<string> {
+        if(!await this.ready){
+            return 'Failed';
+        }
         const partitions = this.namespacePartitions[namespace] ?? 1;
-        return await Promise.all(Array(partitions).map((_, index) => this.index.deleteNamespace(this.addPartitionInfoToNamespace(namespace, index)))).then(results => results.every(r => r === 'Success') ? 'Success' : 'Failure');
+        delete this.namespacePartitions[namespace];
+        return await Promise.all(Array(partitions).fill(0).map((_, index) => this.index.deleteNamespace(this.addPartitionInfoToNamespace(namespace, index)))).then(results => results.every(r => r === 'Success') ? 'Success' : 'Failure');
     }
 
     updateNamespacePartitions(partitions: string[]){
         this.namespacePartitions = partitions.reduce((acc, entry) => {
-            if (this.checkNamespace(entry[0])) {
+            if (this.checkNamespace(entry)) {
                 const namespace = this.clearNamespace(entry);
                 const partition = this.getPartition(entry);
                 acc[namespace] = Math.max(acc[namespace] ?? 0, partition + 1);
@@ -273,7 +291,7 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
         }
         return {
             id: vector1.id,
-            vector: vector1 && vector2 && vector1.vector.concat(vector2.vector),
+            vector: vector1.vector && vector2.vector && vector1.vector.concat(vector2.vector),
             metadata,
             score,
         };

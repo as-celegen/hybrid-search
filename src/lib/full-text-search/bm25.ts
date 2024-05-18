@@ -39,7 +39,7 @@ export type VectorWithData<Metadata extends Record<string, unknown> = Record<str
     id: string | number;
     data: string;
     metadata?: Metadata;
-} & Vector<Metadata>;
+};
 
 export class BM25Search<Metadata extends Record<string, unknown> = Record<string, unknown>> extends SearchIndex<Metadata> {
     private BM25Statistics: BM25Info = {};
@@ -71,13 +71,11 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         }
         const namespace = options?.namespace ?? "";
         const argsArray = Array.isArray(args) ? args : [args];
-        const pipeline = redis.pipeline();
-        argsArray.map(a => pipeline.json.get(namespace + '.' + a, '$.data'));
-        const results = await pipeline.exec<(string | null)[]>();
-        await redis.del(...argsArray.map(a => namespace + '.' + a));
-        await redis.srem('BM25.' + namespace, ...argsArray);
 
-        await this.removeTokensFromStatistics(results.map(r => r !== null ? this.tokenizer(r) : []), namespace);
+        const oldContents = await redis.json.mget<string[]>(argsArray.map(a => namespace + '.' + a), '$.data');
+        await Promise.all([redis.del(...argsArray.map(a => namespace + '.' + a)), redis.srem('BM25.' + namespace, ...argsArray)]);
+
+        await this.removeTokensFromStatistics(oldContents.map(r => r !== null ? this.tokenizer(r) : []), namespace);
 
         return await super.delete(args, options);
     }
@@ -102,16 +100,16 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
     async upsert<TMetadata extends Record<string, unknown> = Metadata>(args: UpsertCommandPayload<TMetadata>, options?:CommandOptions): Promise<string> {
         const namespace = options?.namespace ?? "";
 
-        if(Array.isArray(args) && args.length === 0) {
+        if (Array.isArray(args) && args.length === 0) {
             return 'Success';
         }
-        if((Array.isArray(args) && !('data' in args[0])) || (!Array.isArray(args) && !('data' in args))) {
-            if(!Array.isArray(args) && !('vector' in args)) {
+        if ((Array.isArray(args) && !('data' in args[0])) || (!Array.isArray(args) && !('data' in args))) {
+            if (!Array.isArray(args) && !('vector' in args)) {
                 await redis.json.set((options?.namespace ?? "") + '.' + args.id, '$.metadata', args.metadata as any);
-            } else if(Array.isArray(args)){
+            } else if (Array.isArray(args)) {
                 const pipeline = redis.pipeline();
                 args.forEach(v => {
-                    if(!('vector' in v)) {
+                    if (!('vector' in v)) {
                         pipeline.json.set(namespace + '.' + v.id, '$.metadata', v.metadata as any);
                     }
                 });
@@ -122,42 +120,56 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         // @ts-ignore
         // Typescript does not support the key check for 'data' from above line
         const argsWithData: VectorWithData<TMetadata>[] = Array.isArray(args) ? args : [args];
-        if(!await this.ready){
+        if (!await this.ready) {
             return 'Failed';
         }
 
-        const existingDocuments = await redis.smismember('BM25.' + namespace, argsWithData.map(d => d.id));
-        const existingDocumentsWithData = existingDocuments.map((d, i) => d ? argsWithData[i] : null).filter(d => d !== null);
-        if(existingDocumentsWithData.length > 0) {
-            await this.removeTokensFromStatistics(existingDocumentsWithData.map(d => d !== null ? this.tokenizer(d.data) : []), namespace);
+        const isOldDocument = await redis.smismember('BM25.' + namespace, argsWithData.map(d => d.id));
+        const existingDocumentIds = argsWithData.filter((_, i) => isOldDocument[i] === 1).map(d => d.id);
+        if (existingDocumentIds.length > 0) {
+            const existingDocuments = await redis.json.mget<string[]>(existingDocumentIds.map(d => namespace + '.' + d), '$.data');
+            await this.removeTokensFromStatistics(existingDocuments.map(d => d !== null ? this.tokenizer(d) : []), namespace);
         }
 
         await this.addTokensToStatistics(argsWithData.map(d => this.tokenizer(d.data)), namespace);
 
-        const indexedNumberOfDocuments = this.BM25Statistics[namespace]?.indexedNumberOfDocuments ?? 0;
-        const indexedTotalDocumentLength = this.BM25Statistics[namespace]?.indexedTotalDocumentLength ?? 0;
-        const numberOfDocuments = this.BM25Statistics[namespace]?.numberOfDocuments ?? 0;
-        const totalDocumentLength = this.BM25Statistics[namespace]?.totalDocumentLength ?? 0;
+        const checkIfRebuildIsNeeded = () => {
+            const indexedNumberOfDocuments = this.BM25Statistics[namespace]?.indexedNumberOfDocuments ?? 0;
+            const indexedTotalDocumentLength = this.BM25Statistics[namespace]?.indexedTotalDocumentLength ?? 0;
+            const numberOfDocuments = this.BM25Statistics[namespace]?.numberOfDocuments ?? 0;
+            const totalDocumentLength = this.BM25Statistics[namespace]?.totalDocumentLength ?? 0;
 
-        const checkIfRebuildIsNeeded = () => (
-            indexedNumberOfDocuments === 0 || indexedTotalDocumentLength === 0 || (
-                indexedNumberOfDocuments * 2 < numberOfDocuments &&
+            return (indexedNumberOfDocuments === 0 || indexedTotalDocumentLength === 0 || (
+                (indexedNumberOfDocuments * 0.5 > numberOfDocuments || indexedNumberOfDocuments * 2 < numberOfDocuments) &&
                 Math.abs((indexedTotalDocumentLength / indexedNumberOfDocuments) - (totalDocumentLength / numberOfDocuments)) > (indexedTotalDocumentLength / indexedNumberOfDocuments) * 0.1
             ));
+        };
 
-        if(checkIfRebuildIsNeeded()) {
-            this.BM25Statistics[namespace].indexedNumberOfDocuments = await redis.json.get<number>('BM25-info', '$.' + namespace + '.indexedNumberOfDocuments') ?? 0;
-            this.BM25Statistics[namespace].indexedTotalDocumentLength = await redis.json.get<number>('BM25-info', '$.' + namespace + '.indexedTotalDocumentLength') ?? 0;
-            if(checkIfRebuildIsNeeded()) {
-                this.BM25Statistics[namespace].indexedNumberOfDocuments = this.BM25Statistics[namespace].numberOfDocuments;
-                this.BM25Statistics[namespace].indexedTotalDocumentLength = this.BM25Statistics[namespace].totalDocumentLength;
-                const pipeline = redis.pipeline();
-                pipeline.json.set('BM25-info', '$.' + namespace + '.indexedNumberOfDocuments', this.BM25Statistics[namespace].indexedNumberOfDocuments);
-                pipeline.json.set('BM25-info', '$.' + namespace + '.indexedTotalDocumentLength', this.BM25Statistics[namespace].indexedTotalDocumentLength);
-                await pipeline.exec();
-                if (indexedNumberOfDocuments !== 0) {
-                    await this.updateOldVectors(namespace);
-                }
+        const pipelineForStats = redis.pipeline();
+        pipelineForStats.json.get('BM25-info', '$.' + namespace + '.indexedNumberOfDocuments');
+        pipelineForStats.json.get('BM25-info', '$.' + namespace + '.indexedTotalDocumentLength');
+        pipelineForStats.json.get('BM25-info', '$.' + namespace + '.numberOfDocuments');
+        pipelineForStats.json.get('BM25-info', '$.' + namespace + '.totalDocumentLength');
+        const newIndexedStats = await pipelineForStats.exec<number[]>();
+
+        this.BM25Statistics[namespace].indexedNumberOfDocuments = newIndexedStats[0] ?? 0;
+        this.BM25Statistics[namespace].indexedTotalDocumentLength = newIndexedStats[1] ?? 0;
+        this.BM25Statistics[namespace].numberOfDocuments = newIndexedStats[2] ?? 0;
+        this.BM25Statistics[namespace].totalDocumentLength = newIndexedStats[3] ?? 0;
+
+        if (checkIfRebuildIsNeeded()) {
+            const isFirstUpsert = (this.BM25Statistics[namespace].indexedNumberOfDocuments ?? 0) === 0;
+
+            this.BM25Statistics[namespace].indexedNumberOfDocuments = this.BM25Statistics[namespace].numberOfDocuments;
+            this.BM25Statistics[namespace].indexedTotalDocumentLength = this.BM25Statistics[namespace].totalDocumentLength;
+
+            const pipeline = redis.pipeline();
+            pipeline.json.set('BM25-info', '$.' + namespace + '.indexedNumberOfDocuments', this.BM25Statistics[namespace].indexedNumberOfDocuments);
+            pipeline.json.set('BM25-info', '$.' + namespace + '.indexedTotalDocumentLength', this.BM25Statistics[namespace].indexedTotalDocumentLength);
+            await pipeline.exec();
+
+            if (!isFirstUpsert) {
+                await this.updateOldVectors(namespace);
             }
         }
 
@@ -168,7 +180,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         });
         await pipeline.exec();
 
-        return super.upsert(await Promise.all(argsWithData.map(async a=> {
+        return super.upsert(await Promise.all(argsWithData.map(async a => {
             return {
                 id: a.id,
                 vector: await this.getVectorOfDocument(this.tokenizer(a.data), namespace),
@@ -179,9 +191,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
 
     async updateOldVectors(namespace: string): Promise<string> {
         const documentIds = await redis.smembers('BM25.' + namespace);
-        const pipeline = redis.pipeline();
-        documentIds.forEach(d => pipeline.json.get(namespace + '.' + d));
-        const documents = await pipeline.exec<VectorWithData[]>();
+        const documents = await redis.json.mget<VectorWithData<Metadata>[]>(documentIds.map(d => namespace + '.' + d), '$');
         return await super.upsert(await Promise.all(documents.map(async d => {
             return {
                 id: d.id,
@@ -191,8 +201,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         })), {namespace});
     }
 
-    async addTokensToStatistics(tokenizedDocuments: string[][], namespace: string): Promise<unknown> {
-        const pipeline = redis.pipeline();
+    async addTokensToStatistics(tokenizedDocuments: string[][], namespace: string): Promise<void> {
         if (!this.BM25Statistics[namespace]) {
             this.BM25Statistics[namespace] = {
                 wordStatistics: {},
@@ -202,14 +211,12 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
                 indexedTotalDocumentLength: 0,
                 numberOfWords: 0
             };
-            const remoteStatistics = await redis.json.get<BM25NamespaceInfo>('BM25-info', '$.' + namespace);
-            if(remoteStatistics === null) {
-                await redis.json.set('BM25-info', '$.' + namespace, this.BM25Statistics[namespace]);
-            }else {
-                this.BM25Statistics[namespace] = remoteStatistics;
+            const response = await redis.json.set('BM25-info', '$.' + namespace, this.BM25Statistics[namespace], {nx: true});
+            if(response === null) {
+                this.BM25Statistics[namespace] = await redis.json.get<BM25NamespaceInfo>('BM25-info', '$.' + namespace) ?? this.BM25Statistics[namespace];
             }
         }
-        let newWords: string[] = [];
+        const wordsToIncrease: Record<string, number> = {};
         await Promise.all(tokenizedDocuments.map(async document => {
             const words: Set<string> = new Set(document);
             await Promise.all(Array.from(words).map(async word => {
@@ -218,16 +225,17 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
                         numberOfDocumentsContainingWord: 0,
                         index: -1,
                     };
-                    const remoteWordStatistic = await redis.json.get<WordStatistic>('BM25-info', '$.' + namespace + '.wordStatistics.' + word);
-                    if(remoteWordStatistic !== null) {
-                        this.BM25Statistics[namespace].wordStatistics[word] = remoteWordStatistic;
-                    } else {
-                        await redis.json.set('BM25-info', '$.' + namespace + '.wordStatistics.' + word, this.BM25Statistics[namespace].wordStatistics[word]);
-                        newWords.push(word);
+                    const response = await redis.json.set('BM25-info', '$.' + namespace + '.wordStatistics.' + word, this.BM25Statistics[namespace].wordStatistics[word], {nx: true});
+                    if(response === null) {
+                        this.BM25Statistics[namespace].wordStatistics[word] = await redis.json.get<WordStatistic>('BM25-info', '$.' + namespace + '.wordStatistics.' + word) ?? this.BM25Statistics[namespace].wordStatistics[word];
+                    }else{
+                        this.BM25Statistics[namespace].numberOfWords = (await redis.json.numincrby('BM25-info', '$.' + namespace + '.numberOfWords', 1))[0] ?? this.BM25Statistics[namespace].numberOfWords;
+                        this.BM25Statistics[namespace].wordStatistics[word].index = this.BM25Statistics[namespace].numberOfWords - 1;
+                        await redis.json.set('BM25-info', '$.' + namespace + '.wordStatistics.' + word + '.index', this.BM25Statistics[namespace].wordStatistics[word].index);
                     }
                 }
                 this.BM25Statistics[namespace].wordStatistics[word].numberOfDocumentsContainingWord++;
-                pipeline.json.numincrby('BM25-info', '$.' + namespace + '.wordStatistics.' + word + '.numberOfDocumentsContainingWord', 1);
+                wordsToIncrease[word] = (wordsToIncrease[word] ?? 0) + 1;
             }));
         }));
 
@@ -235,52 +243,56 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
 
         const pipeline2 = redis.pipeline();
 
-        pipeline2.json.numincrby('BM25-info', '$.' + namespace + '.numberOfWords', newWords.length);
         pipeline2.json.numincrby('BM25-info', '$.' + namespace + '.numberOfDocuments', tokenizedDocuments.length);
         pipeline2.json.numincrby('BM25-info', '$.' + namespace + '.totalDocumentLength', totalDocumentLengthToAdd);
 
         const newStats = await pipeline2.exec<number[]>();
 
-        this.BM25Statistics[namespace].numberOfWords = newStats[0];
-        this.BM25Statistics[namespace].numberOfDocuments = newStats[1];
-        this.BM25Statistics[namespace].totalDocumentLength = newStats[2];
+        this.BM25Statistics[namespace].numberOfDocuments = newStats[0];
+        this.BM25Statistics[namespace].totalDocumentLength = newStats[1];
 
-        const newWordsStartIndex = this.BM25Statistics[namespace].numberOfWords - newWords.length;
+        const pipeline = redis.pipeline();
 
-        newWords = newWords.sort();
+        const wordsToIncreaseEntries = Object.entries(wordsToIncrease);
 
-        newWords.forEach((word, index) => {
-            this.BM25Statistics[namespace].wordStatistics[word].index = newWordsStartIndex + index;
-            pipeline.json.set('BM25-info', '$.' + namespace + '.wordStatistics.' + word + '.index', this.BM25Statistics[namespace].wordStatistics[word].index);
+        wordsToIncreaseEntries
+            .forEach(([word, count]) => pipeline.json.numincrby('BM25-info', '$.' + namespace + '.wordStatistics.' + word + '.numberOfDocumentsContainingWord', count));
+        const results = await pipeline.exec<number[]>();
+
+        wordsToIncreaseEntries.forEach(([word, count], i) => {
+            this.BM25Statistics[namespace].wordStatistics[word].numberOfDocumentsContainingWord = results[i];
         });
-
-        return pipeline.exec();
     }
 
     async removeTokensFromStatistics(tokenizedDocuments: string[][], namespace: string): Promise<void> {
-        const pipeline = redis.pipeline();
+        const wordsToDecrement: Record<string, number> = {}
         tokenizedDocuments.forEach(document => {
             const words: Set<string> = new Set(document);
             words.forEach(word => {
                 if (!this.BM25Statistics[namespace].wordStatistics[word]) {
                     return;
                 }
-                this.BM25Statistics[namespace].wordStatistics[word].numberOfDocumentsContainingWord--;
-                pipeline.json.numincrby('BM25-info', '$.' + namespace + '.wordStatistics.' + word + '.numberOfDocumentsContainingWord', -1);
+                if(this.BM25Statistics[namespace].wordStatistics[word].numberOfDocumentsContainingWord-- > 0) {
+                    wordsToDecrement[word] = (wordsToDecrement[word] ?? 0) + 1;
+                }else {
+                    this.BM25Statistics[namespace].wordStatistics[word].numberOfDocumentsContainingWord = 0;
+                }
             });
         });
-
         const numberOfDocumentsToRemove = tokenizedDocuments.length;
         const totalDocumentLengthToRemove = tokenizedDocuments.reduce((acc, document) => acc + document.length, 0);
 
         const pipeline2 = redis.pipeline();
         pipeline2.json.numincrby('BM25-info', '$.' + namespace + '.numberOfDocuments', -numberOfDocumentsToRemove);
         pipeline2.json.numincrby('BM25-info', '$.' + namespace + '.totalDocumentLength', -totalDocumentLengthToRemove);
-
         const newStats = await pipeline2.exec<number[]>();
+
         this.BM25Statistics[namespace].numberOfDocuments = newStats[0];
         this.BM25Statistics[namespace].totalDocumentLength = newStats[1];
 
+        const pipeline = redis.pipeline();
+        Object.entries(wordsToDecrement)
+            .forEach(([word, count]) => pipeline.json.numincrby('BM25-info', '$.' + namespace + '.wordStatistics.' + word + '.numberOfDocumentsContainingWord', -count));
         await pipeline.exec();
     }
 
@@ -290,7 +302,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         }
         const tokenCounts : Record<string, number> = {};
         const vector: number[] = Array(this.BM25Statistics[namespace].numberOfWords).fill(0);
-        const averageDocumentLength = this.BM25Statistics[namespace].totalDocumentLength / this.BM25Statistics[namespace].numberOfDocuments;
+        const averageDocumentLength = this.BM25Statistics[namespace].indexedTotalDocumentLength / this.BM25Statistics[namespace].indexedNumberOfDocuments;
 
         tokens.map((token) => {
             tokenCounts[token] = (tokenCounts[token] ?? 0) + 1;
@@ -311,7 +323,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
                 return;
             }
 
-            vector[index] = tokenCount / (tokenCount + this.k * (1 - this.b + this.b * (tokens.length / averageDocumentLength)));
+            vector[index] += tokenCount / (tokenCount + this.k * (1 - this.b + this.b * (tokens.length / averageDocumentLength)));
         }));
 
         return vector;
@@ -346,9 +358,10 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
     async reset(options?: CommandOptions): Promise<string> {
         const namespace = options?.namespace ?? "";
         delete this.BM25Statistics[namespace];
-        await redis.json.del('BM25-info', '$.' + namespace);
-        const documents = await redis.smembers('BM25.' + namespace);
-        await redis.del(...documents.map(d => namespace + '.' + d), 'BM25.' + namespace);
+        const documentIds = await redis.smembers('BM25.' + namespace);
+        const infoDel = redis.json.del('BM25-info', '$.' + namespace);
+        const documentDel = redis.del('BM25.' + namespace, ...documentIds.map(d => namespace + '.' + d));
+        await Promise.all([infoDel, documentDel]);
         await super.reset(options);
         return 'Success';
     }

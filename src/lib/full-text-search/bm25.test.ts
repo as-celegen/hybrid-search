@@ -1,112 +1,235 @@
-import {BM25, WordStatistics} from "@/lib/full-text-search/bm25";
-import {describe, it, expect, expectTypeOf} from "vitest";
+import {BM25Info, BM25Search} from "@/lib/full-text-search/bm25";
+import {describe, it, expect, expectTypeOf, beforeAll, beforeEach} from "vitest";
 import {redis} from "@/context/redis";
+import {BigIndex} from "@/lib/big-index";
+import {Index} from "@upstash/vector";
 
 const documents = [
-    {key: '1', title: 'Hello', document: 'Hello world'},
-    {key: '2', title: 'World', document: 'Hello world'},
-    {key: '3', title: 'Foo', document: 'lorem ipsum dolor sit amet'},
-    {key: '4', title: 'Bar', document: 'lorem ipsum world'},
-    {key: '5', title: 'Baz', document: 'Foo bar'},
-    {key: '6', title: 'Qux', document: 'Bar'},
+    {id: '1', data: 'Hello world', metadata: {title: 'Hello'}},
+    {id: '2', data: 'Hello world', metadata: {title: 'World'}},
+    {id: '3', data: 'lorem ipsum dolor sit amet', metadata: {title: 'Foo'}},
+    {id: '4', data: 'lorem ipsum world', metadata: {title: 'Bar'}},
+    {id: '5', data: 'Foo bar', metadata: {title: 'Baz'}},
+    {id: '6', data: 'Bar', metadata: {title: 'Qux'}},
 ];
 
-const trueWordStatistics: WordStatistics = {
-    'hello': {numberOfDocumentsContainingWord: 2, index: 4, idf: 1.02962},
-    'world': {numberOfDocumentsContainingWord: 3, index: 8, idf: 0.693147},
-    'foo': {numberOfDocumentsContainingWord: 1, index: 3, idf: 1.54045},
-    'lorem': {numberOfDocumentsContainingWord: 2, index: 6, idf: 1.02962},
-    'ipsum': {numberOfDocumentsContainingWord: 2, index: 5, idf: 1.02962},
-    'dolor': {numberOfDocumentsContainingWord: 1, index: 2, idf: 1.54045},
-    'sit': {numberOfDocumentsContainingWord: 1, index: 7, idf: 1.54045},
-    'amet': {numberOfDocumentsContainingWord: 1, index: 0, idf: 1.54045},
-    'bar': {numberOfDocumentsContainingWord: 2, index: 1, idf: 1.02962},
+const wordCounts = {
+    'hello': 2,
+    'world': 3,
+    'lorem': 2,
+    'ipsum': 2,
+    'dolor': 1,
+    'sit': 1,
+    'amet': 1,
+    'foo': 1,
+    'bar': 2,
 };
 
-const search = new BM25();
+const indexConfig = {
+    url: process.env.BIG_INDEX_TEST_VECTOR_INDEX_URL,
+    token: process.env.BIG_INDEX_TEST_VECTOR_INDEX_TOKEN,
+}
+
+let bigIndex: BigIndex, index: Index, search: BM25Search;
 
 describe('BM25 Search', () => {
-    it('should create an instance', () => {
-        expect(search).toBeInstanceOf(BM25);
+    beforeAll(async () => {
+        bigIndex = new BigIndex(indexConfig);
+        index = new Index(indexConfig);
+        // @ts-expect-error
+        await bigIndex.ready;
     });
 
-    it('should prepare an index', async () => {
-        const result = await search.prepareIndex(documents);
-        expect(result).toBe(true);
-        Object.keys(search.wordStatistics).map((word) => {
-            expect(search.wordStatistics[word].numberOfDocumentsContainingWord).toBe(trueWordStatistics[word].numberOfDocumentsContainingWord);
-            expect(search.wordStatistics[word].index).toBe(trueWordStatistics[word].index);
-            expect(search.wordStatistics[word].idf).toBeCloseTo(trueWordStatistics[word].idf, 5);
+    beforeEach(async () => {
+        search = new BM25Search({configOrIndex: bigIndex});
+        // @ts-expect-error
+        await search.ready;
+    });
+
+    it('should create an instance', async () => {
+        const search = new BM25Search({configOrIndex: bigIndex});
+        expect(search).toBeInstanceOf(BM25Search);
+        // @ts-expect-error
+        await search.ready;
+        // @ts-expect-error
+        expect(search.BM25Statistics).not.toBeUndefined();
+    });
+
+    it('should upsert documents for the first time', async () => {
+        await search.upsert(documents, {namespace: 'test-1'});
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        // @ts-expect-error
+        const statistics = search.BM25Statistics;
+        const redisInfo: BM25Info | null = await redis.json.get('BM25-info');
+        expect(redisInfo).toEqual(statistics);
+        expect(redisInfo).not.toBeNull();
+        expect(redisInfo!["test-1"]).not.toBeNull();
+        expect({...redisInfo!["test-1"], wordStatistics: undefined}).toEqual({
+            numberOfDocuments: 6,
+            totalDocumentLength: 15,
+            indexedNumberOfDocuments: 6,
+            indexedTotalDocumentLength: 15,
+            numberOfWords: 9,
+        });
+        Object.entries(wordCounts).forEach(([word, count]) => expect(redisInfo!["test-1"].wordStatistics[word].numberOfDocumentsContainingWord).toEqual(count));
+        const vector = await bigIndex.fetch(['1', '2'], {namespace: 'test-1%20BM25',includeMetadata: true, includeVectors: true});
+        expectTypeOf(vector).toBeArray();
+        expect(vector.filter(i => i !== null)).toHaveLength(2);
+        expect(vector.map(i => i !== null ? i.metadata : [])).toEqual(documents.slice(0, 2).map(i => i.metadata));
+        vector.forEach((v, i) => {
+            expect(v).not.toBeNull();
+            expectTypeOf(v).toBeObject;
+            expect(v?.metadata).toEqual(documents[i].metadata);
+            const expectedVector: number[] = Array(statistics["test-1"].numberOfWords).fill(0);
+            expectedVector[statistics["test-1"].wordStatistics['hello'].index] = 1 / (1 + 1.5 * (1 - 0.75 + 0.75 * (2 / 2.5)));
+            expectedVector[statistics["test-1"].wordStatistics['world'].index] = 1 / (1 + 1.5 * (1 - 0.75 + 0.75 * (2 / 2.5)));
+            expectedVector.forEach((value, index) => expect(value).toBeCloseTo(v?.vector[index] ?? 0, 5));
         });
     });
 
-    it('should get a vector for documents', async () => {
-        await search.prepareIndex(documents);
-        const vector = await search.getVector('hello world');
-        console.log(vector);
-        expectTypeOf(vector).toBeArray();
-        expect(vector.length).toBeGreaterThan(0);
-        const testVector = Array.from({length: search.dimension}, () => 0);
-        const tf = (wordCount: number, length: number) => (search.k+1)* wordCount  / (wordCount + search.k * (1 - search.b + search.b * (length / search.averageDocumentLength)));
-        testVector[search.wordStatistics['hello'].index] = tf(1, 2) * search.wordStatistics['hello'].idf;
-        testVector[search.wordStatistics['world'].index] = tf(1, 2) * search.wordStatistics['world'].idf;
-        expect(vector).toEqual(testVector);
-    });
-
-    it('should get a vector for search queries', async () => {
-        const vector = await search.getVectorForSearch('hello world');
-        expectTypeOf(vector).toBeArray();
-        expect(vector.length).toBeGreaterThan(0);
-        const testVector = Array.from({length: search.dimension}, () => 0);
-        testVector[search.wordStatistics['hello'].index] = 1;
-        testVector[search.wordStatistics['world'].index] = 1;
-        expect(vector).toEqual(testVector);
-    });
-
-    it('should build an index', async () => {
-        const result = await search.buildIndex(documents);
-        expect(result).toBe(true);
-        const vector = await search.index.fetch(['1#BM25']);
-        expectTypeOf(vector).toBeArray();
-        const info = await redis.get<BM25>('BM25-info');
-        expectTypeOf(info).toBeObject;
-    });
-
-    it('should add documents', async () => {
-        const search = new BM25();
-        await search.prepareIndex(documents);
-        const result = await search.add(documents.map(({key, title, document}) => ({key: key+6, title, document})));
-        expect(result).toBe(true);
-        const vector = await search.index.fetch(['16#BM25', '26#BM25'], {includeMetadata: true});
+    it('should rebuild if necessary', async () => {
+        await search.reset({namespace: 'test-2'});
+        await search.upsert(documents.slice(0, 2), {namespace: 'test-2'});
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        // @ts-expect-error
+        const statistics = search.BM25Statistics;
+        const redisInfo: BM25Info | null = await redis.json.get('BM25-info');
+        expect(redisInfo).toEqual(statistics);
+        expect({...redisInfo!["test-2"], wordStatistics: undefined}).toEqual({
+            numberOfDocuments: 2,
+            totalDocumentLength: 4,
+            indexedNumberOfDocuments: 2,
+            indexedTotalDocumentLength: 4,
+            numberOfWords: 2,
+        });
+        Object.entries({'hello': 2, 'world': 2}).forEach(([word, count]) => expect(redisInfo!["test-2"].wordStatistics[word].numberOfDocumentsContainingWord).toEqual(count));
+        const vector = await bigIndex.fetch(['1', '2'], {namespace: 'test-2%20BM25',includeMetadata: true, includeVectors: true});
         expectTypeOf(vector).toBeArray();
         expect(vector.filter(i => i !== null)).toHaveLength(2);
+        expect(vector.map(i => i !== null ? i.metadata : [])).toEqual(documents.slice(0, 2).map(i => i.metadata));
+        vector.forEach((v, i) => {
+            expect(v).not.toBeNull();
+            expectTypeOf(v).toBeObject;
+            expect(v?.metadata).toEqual(documents[i].metadata);
+            const expectedVector: number[] = Array(statistics["test-2"].numberOfWords).fill(0);
+            expectedVector[statistics["test-2"].wordStatistics['hello'].index] = 1 / (1 + 1.5 * (1 - 0.75 + 0.75 * (2 / 2)));
+            expectedVector[statistics["test-2"].wordStatistics['world'].index] = 1 / (1 + 1.5 * (1 - 0.75 + 0.75 * (2 / 2)));
+            expectedVector.forEach((value, index) => expect(value).toBeCloseTo(v?.vector[index] ?? 0, 5));
+        });
+
+        await search.upsert(documents.slice(2), {namespace: 'test-2'});
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        // @ts-expect-error
+        const statistics2 = search.BM25Statistics;
+        const redisInfo2: BM25Info | null = await redis.json.get('BM25-info');
+        expect(redisInfo2).toEqual(statistics2);
+        expect({...redisInfo2!["test-2"], wordStatistics: undefined}).toEqual({
+            numberOfDocuments: 6,
+            totalDocumentLength: 15,
+            indexedNumberOfDocuments: 6,
+            indexedTotalDocumentLength: 15,
+            numberOfWords: 9,
+        });
+        Object.entries(wordCounts).forEach(([word, count]) => expect(redisInfo2!["test-2"].wordStatistics[word].numberOfDocumentsContainingWord).toEqual(count));
+        const vector2 = await bigIndex.fetch(['5', '6'], {namespace: 'test-2%20BM25',includeMetadata: true, includeVectors: true});
+        expectTypeOf(vector2).toBeArray();
+        expect(vector2.filter(i => i !== null)).toHaveLength(2);
+        expect(vector2.map(i => i !== null ? i.metadata : [])).toEqual(documents.slice(4).map(i => i.metadata));
+
+        const expectedVector: number[] = Array(statistics2["test-2"].numberOfWords).fill(0);
+        expectedVector[statistics2["test-2"].wordStatistics['foo'].index] = 1 / (1 + 1.5 * (1 - 0.75 + 0.75 * (2 / 2.5)));
+        expectedVector[statistics2["test-2"].wordStatistics['bar'].index] = 1 / (1 + 1.5 * (1 - 0.75 + 0.75 * (2 / 2.5)));
+        expectedVector.forEach((value, index) => expect(value).toBeCloseTo(vector2[0]?.vector[index] ?? 0, 5));
+        expectedVector[statistics2["test-2"].wordStatistics['foo'].index] = 0;
+        expectedVector[statistics2["test-2"].wordStatistics['bar'].index] = 1 / (1 + 1.5 * (1 - 0.75 + 0.75 * (1 / 2.5)));
+        expectedVector.forEach((value, index) => expect(value).toBeCloseTo(vector2[1]?.vector[index] ?? 0, 5));
+    }, 10000);
+
+    it('should update metadata', async () => {
+        // TODO: Fix this test
+        await search.reset({namespace: 'test-3'});
+        await search.upsert(documents, {namespace: 'test-3'});
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        await search.upsert({id: '1', metadata: {title: 'test'}}, {namespace: 'test-3'});
+        const vector = await bigIndex.fetch(['1'], {namespace: 'test-3%20BM25',includeMetadata: true, includeVectors: false});
+        expectTypeOf(vector).toBeArray();
+        expect(vector.filter(i => i !== null)).toHaveLength(1);
+        expect(vector[0]?.metadata).toEqual({title: 'test'});
     });
 
-    it('should search documents', async () => {
-        const search = new BM25();
-        await search.prepareIndex(documents);
-        await new Promise(resolve => setTimeout(resolve, 10000));
-        const results = await search.search('foo');
-        expectTypeOf(results).toBeArray();
-        console.log(results);
-        expect(results.length).toBeGreaterThan(0);
-    }, 15000);
+    it('should delete documents', async () => {
+        await search.reset({namespace: 'test-6'});
+        await search.upsert(documents, {namespace: 'test-6'});
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        // @ts-expect-error
+        const statistics = search.BM25Statistics;
+        const redisInfo: BM25Info | null = await redis.json.get('BM25-info');
+        expect(redisInfo).toEqual(statistics);
+        expect(redisInfo).not.toBeNull();
+        expect(redisInfo!["test-6"]).not.toBeNull();
+        expect({...redisInfo!["test-6"], wordStatistics: undefined}).toEqual({
+            numberOfDocuments: 6,
+            totalDocumentLength: 15,
+            indexedNumberOfDocuments: 6,
+            indexedTotalDocumentLength: 15,
+            numberOfWords: 9,
+        });
 
-    it('should remove documents', async () => {
-        const search = new BM25();
-        await search.add(documents);
-        const result = await search.remove('1');
-        expect(result).toBe(1);
-        const vector = await search.index.fetch(['1#BM25']);
-        expect(vector).toEqual([null]);
+        await search.delete(['1', '2', '3', '4'], {namespace: 'test-6'});
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const redisInfo2: BM25Info | null = await redis.json.get('BM25-info');
+        expect(redisInfo2).toEqual(statistics);
+        expect(redisInfo2).not.toBeNull();
+        expect(redisInfo2!["test-6"]).not.toBeNull();
+        expect({...redisInfo2!["test-6"], wordStatistics: undefined}).toEqual({
+            numberOfDocuments: 2,
+            totalDocumentLength: 3,
+            indexedNumberOfDocuments: 2,
+            indexedTotalDocumentLength: 3,
+            numberOfWords: 9,
+        });
+        Object.entries({...wordCounts, hello: 0, world: 0, lorem: 0, ipsum: 0, dolor: 0, sit: 0, amet: 0}).forEach(([word, count]) => expect(redisInfo2!["test-6"].wordStatistics[word].numberOfDocumentsContainingWord).toEqual(count));
     });
 
-    it('should reset the index', async () => {
-        const search = new BM25();
-        await search.buildIndex(documents);
-        await search.resetIndex();
-        const result = await search.index.fetch(['1#BM25']);
-        expect(result).toEqual([null]);
+    describe('should search documents', async () => {
+        it('shorter documents should have higher score', async () => {
+            await search.upsert(documents, {namespace: 'test-4'});
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            const results = await search.query({data: 'lorem', topK: 6}, {namespace: 'test-4'});
+            expectTypeOf(results).toBeArray();
+            expect(results.length).toBeGreaterThan(0);
+            expect(results[0].id).toBe('4');
+        });
+
+        it('less common words should have higher score', async () => {
+            await search.upsert(documents, {namespace: 'test-4'});
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            const results = await search.query({data: 'foo world', topK: 6}, {namespace: 'test-4'});
+            expectTypeOf(results).toBeArray();
+            expect(results.length).toBeGreaterThan(0);
+            expect(results[0].id).toBe('5');
+        });
     });
 
+    it('should delete namespace', async () => {
+        await search.upsert(documents, {namespace: 'test-5'});
+        await search.deleteNamespace('test-5');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const redisInfo: BM25Info | null = await redis.json.get('BM25-info');
+        expect(redisInfo).not.toBeNull();
+        expect(redisInfo!["test-5"]).toBeUndefined();
+        const namespaceList = await index.listNamespaces();
+        namespaceList.forEach(namespace => expect(namespace.startsWith('test-5%20BM25')).toBe(false));
+        expect(await redis.exists('BM25.test-5', ...documents.map(d => `test-5.${d.id}`))).toBe(0);
+    });
+
+    it('should reset namespace', async () => {
+        await search.upsert(documents, {namespace: 'test-5'});
+        await search.reset({namespace: 'test-5'});
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const redisInfo: BM25Info | null = await redis.json.get('BM25-info');
+        expect(redisInfo).not.toBeNull();
+        expect(redisInfo!["test-5"]).toBeUndefined();
+        expect(await redis.exists('BM25.test-5', ...documents.map(d => `test-5.${d.id}`))).toBe(0);
+    });
 });

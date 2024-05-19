@@ -120,7 +120,7 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
             });
         });
         const results = await Promise.all(partitionedVectors.map((vectors, index) =>{
-            if(vectors.length === 0){
+            if(vectors.length === 0 && argsWithJustMetadata.length === 0){
                 return 'Success';
             }
             return this.index.upsert<Record<string, unknown>>([...vectors, ...argsWithJustMetadata], {namespace: this.addPartitionInfoToNamespace(options?.namespace ?? "", index)});

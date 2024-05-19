@@ -18,7 +18,7 @@ const bigIndexConfig = {
 
 const index = new Index(bigIndexConfig);
 
-describe('Model Embedding Search', () => {
+describe('Big Index test', () => {
     it('should create an instance', () => {
         const search = new BigIndex(bigIndexConfig);
         expect(search).toBeInstanceOf(BigIndex);
@@ -52,6 +52,19 @@ describe('Model Embedding Search', () => {
         const secondPartition = await index.fetch(['1', '2'], {includeVectors: true, includeMetadata: true, namespace: 'test%201%20BigIndex'});
         expect(secondPartition.map(i => i !== null ? i.vector : [])).toEqual(documents.slice(0, 2).map(i => i.vector.slice(3)));
         expect(secondPartition.map(i => i !== null ? i.metadata : [])).toEqual(documents.slice(0, 2).map(i => i.metadata));
+    });
+
+    it.skip('should update metadata', async () => {
+        //TODO: Fix this test
+        const search = new BigIndex(bigIndexConfig);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const result = await search.upsert(documents, {namespace: 'test-5'});
+        expect(result).toBe('Success');
+        await search.upsert([{id: '1', metadata: {title: 'Hello World'}}], {namespace: 'test-5'});
+        const vector = await index.fetch(['1'], {includeVectors: false, includeMetadata: true, namespace: 'test-5%201%20BigIndex'});
+        expectTypeOf(vector).toBeArray();
+        expect(vector.filter(i => i !== null)).toHaveLength(1);
+        expect(vector.map(i => i !== null ? i.metadata : [])).toEqual([{title: 'Hello World'}]);
     });
 
     it('should search documents', async () => {

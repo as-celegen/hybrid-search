@@ -16,3 +16,7 @@ export async function GET(req: NextRequest, { params }: { params?: { namespace: 
 
     return NextResponse.json({result: documents});
 }
+
+export async function POST(req: NextRequest, { params }: { params?: { namespace: string[] } }): Promise<NextResponse> {
+    return await GET(req, {params});
+}

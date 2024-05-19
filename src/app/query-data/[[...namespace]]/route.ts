@@ -2,7 +2,8 @@ import {NextRequest, NextResponse} from "next/server";
 import {fullTextSearch} from "@/context/full-text-search";
 import {semanticSearch} from "@/context/semantic-search";
 import {hybridSearch} from "@/context/hybrid-search";
-export async function GET(req: NextRequest, { params }: { params?: { namespace: string[] } }): Promise<NextResponse> {
+
+export async function POST(req: NextRequest, { params }: { params?: { namespace: string[] } }): Promise<NextResponse> {
     const query = await req.json();
     if (!query) {
         return NextResponse.json({result: 'Query is required'}, {status: 400});

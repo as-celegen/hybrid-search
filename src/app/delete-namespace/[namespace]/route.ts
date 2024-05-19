@@ -11,3 +11,7 @@ export async function DELETE(req: NextRequest, { params }: { params?: { namespac
     ]);
     return NextResponse.json({result: a && b ? 'OK' : 'Error'});
 }
+
+export async function POST(req: NextRequest, { params }: { params?: { namespace: string[] } }): Promise<NextResponse> {
+    return await DELETE(req, {params});
+}

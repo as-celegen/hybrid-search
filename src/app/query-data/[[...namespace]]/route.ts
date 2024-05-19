@@ -5,12 +5,12 @@ import {hybridSearch} from "@/context/hybrid-search";
 export async function GET(req: NextRequest, { params }: { params?: { namespace: string[] } }): Promise<NextResponse> {
     const query = await req.json();
     if (!query) {
-        return new NextResponse('Query is required', {status: 400});
+        return NextResponse.json({result: 'Query is required'}, {status: 400});
     }
     if(!('topK' in query) || !('data' in query)) {
-        return new NextResponse('Query must contain topK and data fields', {status: 400});
+        return NextResponse.json({result: 'Query must contain topK and data fields'}, {status: 400});
     }
-    const namespace = params?.namespace.join('/') ?? "";
+    const namespace = params?.namespace?.join('/') ?? "";
 
     const [semanticSearchResults, fullTextSearchResults] = await Promise.all([
         semanticSearch.query(query, {namespace}),

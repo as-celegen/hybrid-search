@@ -3,7 +3,7 @@ import {fullTextSearch} from "@/context/full-text-search";
 import {semanticSearch} from "@/context/semantic-search";
 
 export async function DELETE(req: NextRequest, { params }: { params?: { namespace: string[] } }): Promise<NextResponse> {
-    const namespace = params?.namespace.join('/') ?? "";
+    const namespace = params?.namespace?.join('/') ?? "";
 
     const [a, b] = await Promise.all([
         fullTextSearch.deleteNamespace(namespace),

@@ -251,10 +251,12 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
                     const response = await redis.json.set('BM25-info', this.getPathForWordStats(namespace, word), this.BM25Statistics[namespace].wordStatistics[word], {nx: true});
                     if(response === null) {
                         this.BM25Statistics[namespace].wordStatistics[word] = await redis.json.get<WordStatistic>('BM25-info', this.getPathForWordStats(namespace, word)) ?? this.BM25Statistics[namespace].wordStatistics[word];
+                        this.BM25Statistics[namespace].numberOfWords = Math.max(this.BM25Statistics[namespace].numberOfWords, this.BM25Statistics[namespace].wordStatistics[word].index);
                     }else{
-                        this.BM25Statistics[namespace].numberOfWords = Math.max((await redis.json.numincrby('BM25-info', this.getPathForStats(namespace) + '.numberOfWords', 1))[0] ?? 0, this.BM25Statistics[namespace].numberOfWords);
-                        this.BM25Statistics[namespace].wordStatistics[word].index = this.BM25Statistics[namespace].numberOfWords - 1;
-                        await redis.json.set('BM25-info', this.getPathForWordStats(namespace, word) + '.index', this.BM25Statistics[namespace].wordStatistics[word].index);
+                        const increasedNumberOfWords = (await redis.json.numincrby('BM25-info', this.getPathForStats(namespace) + '.numberOfWords', 1))[0] ?? 0
+                        this.BM25Statistics[namespace].numberOfWords = Math.max(this.BM25Statistics[namespace].numberOfWords, increasedNumberOfWords);
+                        this.BM25Statistics[namespace].wordStatistics[word].index = increasedNumberOfWords - 1;
+                        await redis.json.set('BM25-info', this.getPathForWordStats(namespace, word) + '.index', increasedNumberOfWords - 1);
                     }
                 }
                 this.BM25Statistics[namespace].wordStatistics[word].numberOfDocumentsContainingWord++;
@@ -339,6 +341,10 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
                 if(remoteWord !== null && remoteWord.index !== -1) {
                     this.BM25Statistics[namespace].wordStatistics[token] = remoteWord;
                     index = remoteWord.index;
+                    if(this.BM25Statistics[namespace].wordStatistics[token].index >= this.BM25Statistics[namespace].numberOfWords) {
+                        vector.push(...Array(this.BM25Statistics[namespace].wordStatistics[token].index - this.BM25Statistics[namespace].numberOfWords + 1).fill(0))
+                        this.BM25Statistics[namespace].numberOfWords = this.BM25Statistics[namespace].wordStatistics[token].index + 1;
+                    }
                 } else {
                     return;
                 }
@@ -364,6 +370,10 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
                 if(remoteWord !== null && remoteWord.index !== -1) {
                     this.BM25Statistics[namespace].wordStatistics[word] = remoteWord;
                     index = remoteWord.index;
+                    if(this.BM25Statistics[namespace].wordStatistics[word].index >= this.BM25Statistics[namespace].numberOfWords) {
+                        vector.push(...Array(this.BM25Statistics[namespace].wordStatistics[word].index - this.BM25Statistics[namespace].numberOfWords + 1).fill(0))
+                        this.BM25Statistics[namespace].numberOfWords = this.BM25Statistics[namespace].wordStatistics[word].index + 1;
+                    }
                 } else {
                     return;
                 }

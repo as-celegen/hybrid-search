@@ -135,10 +135,10 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
         if(!await this.ready){
             return Array(ids.length).fill(null);
         }
-        const results = await Promise.all(Array(this.namespacePartitions[opts?.namespace ?? ""] ?? 1)
+        const results = await Promise.all(Array(this.namespacePartitions[opts?.namespace ?? ""] ?? 1).fill(0)
             .map((_, index) => this.index.fetch<TMetadata>(ids, {...opts, namespace: this.addPartitionInfoToNamespace(opts?.namespace ?? "", index)}))
         );
-        return results.reduce(this.combineNamespaces, []);
+        return results.reduce((a, b) => this.combineNamespaces(a, b), []);
     }
 
     async reset(options?: CommandOptions): Promise<string> {
@@ -163,7 +163,7 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
         const results = await this.index.range<TMetadata>(args, options);
         const ids = results.vectors.map((result) => result.id);
 
-        const vectors = await Promise.all(Array(this.namespacePartitions[options?.namespace ?? ""] ?? 1)
+        const vectors = await Promise.all(Array(this.namespacePartitions[options?.namespace ?? ""] ?? 1).fill(0)
             .map((_, index) => this.index.fetch<TMetadata>(ids,  {includeVectors: true, namespace: this.addPartitionInfoToNamespace(options?.namespace ?? "", index)}))
         );
         return vectors.reduce((acc, result) => {

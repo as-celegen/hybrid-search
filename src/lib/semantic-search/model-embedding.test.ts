@@ -42,7 +42,7 @@ describe('Model Embedding Search', () => {
 
     it('should search documents', async () => {
         const search = new ModelEmbeddingSearch();
-        await new Promise(resolve => setTimeout(resolve, 10000));
+        await new Promise(resolve => setTimeout(resolve, 1000));
         const results = await search.query({data: 'hello', topK: 3});
         expectTypeOf(results).toBeArray();
         console.log(results);

@@ -4,7 +4,7 @@ import { type NextFetchEvent, type NextRequest, NextResponse } from "next/server
 
 const ratelimit = new Ratelimit({
     redis,
-    limiter: Ratelimit.cachedFixedWindow(10, "10s"),
+    limiter: Ratelimit.cachedFixedWindow(20, "10s"),
     prefix: "ratelimit",
 });
 

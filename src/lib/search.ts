@@ -52,7 +52,7 @@ export abstract class SearchIndex<Metadata extends Record<string, unknown> = Rec
     }
 
     async listNamespaces(): Promise<string[]> {
-        return Array.from(new Set((await this.index.listNamespaces()).map((namespace) => this.clearNamespace(namespace))));
+        return Array.from(new Set((await this.index.listNamespaces()).filter(a => this.checkNamespace(a)).map((namespace) => this.clearNamespace(namespace))));
     }
 
     async deleteNamespace(namespace: string): Promise<string> {

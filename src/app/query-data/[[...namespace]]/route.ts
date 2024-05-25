@@ -15,7 +15,7 @@ export async function POST(req: NextRequest, { params }: { params?: { namespace:
 
     const [semanticSearchResults, fullTextSearchResults] = await Promise.all([
         semanticSearch.query(query, {namespace}),
-        fullTextSearch.query(query, {namespace})
+        fullTextSearch.query({...query, includeVectors: false}, {namespace})
     ]);
     const results = hybridSearch.combineResults(fullTextSearchResults, semanticSearchResults);
 

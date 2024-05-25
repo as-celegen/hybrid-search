@@ -90,7 +90,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
 
     getPathForStats = (namespace: string) => `$[${JSON.stringify(namespace)}]`;
     getPathForWordStats = (namespace: string, word: string) => `$[${JSON.stringify(namespace)}].wordStatistics.${word}`;
-    getRedisKeyForDocument = (namespace: string, id: string | number) => JSON.stringify(namespace) + '.' + JSON.stringify(id);
+    getRedisKeyForDocument = (namespace: string, id: string | number) => JSON.stringify(namespace) + '.' + JSON.stringify(id.toString());
 
 
     constructor(BM25SearchIndexConfig?: BM25SearchIndexConfig<Metadata>) {

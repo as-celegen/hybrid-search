@@ -6,9 +6,9 @@ export interface SearchBoxProps {
 export default function SearchBox({ onSubmit, namespaces }: SearchBoxProps) {
     return (
         <form className="flex flex-row items-center justify-center w-full" onSubmit={onSubmit}>
-            <label>Search</label>
+            <label>Search: </label>
             <input required type={"text"}/>
-            <label>Namespace</label>
+            <label>Namespace: </label>
             <select>
                 {namespaces.map((namespace) => (
                     <option key={namespace} value={namespace}>{namespace.length == 0 ? <i>(Default)</i>: namespace}</option>

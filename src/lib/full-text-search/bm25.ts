@@ -90,6 +90,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
 
     getPathForStats = (namespace: string) => `$[${JSON.stringify(namespace)}]`;
     getPathForWordStats = (namespace: string, word: string) => `$[${JSON.stringify(namespace)}].wordStatistics.${word}`;
+    getRedisKeyForDocument = (namespace: string, id: string | number) => JSON.stringify(namespace) + '.' + JSON.stringify(id);
 
 
     constructor(BM25SearchIndexConfig?: BM25SearchIndexConfig<Metadata>) {
@@ -124,8 +125,8 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         const namespace = options?.namespace ?? "";
         const argsArray = Array.isArray(args) ? args : [args];
 
-        const oldContents = await redis.json.mget<string[][]>(argsArray.map(a => namespace + '.' + a), '$.data');
-        await Promise.all([redis.del(...argsArray.map(a => namespace + '.' + a)), redis.srem('BM25.' + namespace, ...argsArray)]);
+        const oldContents = await redis.json.mget<string[][]>(argsArray.map(a => this.getRedisKeyForDocument(namespace, a)), '$.data');
+        await Promise.all([redis.del(...argsArray.map(a => this.getRedisKeyForDocument(namespace, a))), redis.srem('BM25.' + namespace, ...argsArray)]);
 
         await this.removeTokensFromStatistics(oldContents.map(r => r !== null ? this.tokenizer(r[0]) : []), namespace);
 
@@ -159,12 +160,12 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         }
         if ((Array.isArray(args) && !('data' in args[0])) || (!Array.isArray(args) && !('data' in args))) {
             if (!Array.isArray(args) && !('vector' in args)) {
-                await redis.json.set((options?.namespace ?? "") + '.' + args.id, '$.metadata', args.metadata as any);
+                await redis.json.set(this.getRedisKeyForDocument(namespace, args.id), '$.metadata', args.metadata as any);
             } else if (Array.isArray(args)) {
                 const pipeline = redis.pipeline();
                 args.forEach(v => {
                     if (!('vector' in v)) {
-                        pipeline.json.set(namespace + '.' + v.id, '$.metadata', v.metadata as any);
+                        pipeline.json.set(this.getRedisKeyForDocument(namespace, v.id), '$.metadata', v.metadata as any);
                     }
                 });
                 await pipeline.exec();
@@ -181,7 +182,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         const isOldDocument = await redis.smismember('BM25.' + namespace, argsWithData.map(d => d.id));
         const existingDocumentIds = argsWithData.filter((_, i) => isOldDocument[i] === 1).map(d => d.id);
         if (existingDocumentIds.length > 0) {
-            const existingDocuments = await redis.json.mget<string[][]>(existingDocumentIds.map(d => namespace + '.' + d), '$.data');
+            const existingDocuments = await redis.json.mget<string[][]>(existingDocumentIds.map(d => this.getRedisKeyForDocument(namespace, d)), '$.data');
             await this.removeTokensFromStatistics(existingDocuments.map(d => d !== null ? this.tokenizer(d[0]) : []), namespace);
         }
 
@@ -191,7 +192,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         const pipeline = redis.pipeline();
         pipeline.sadd('BM25.' + namespace, ...argsWithData.map(d => d.id));
         argsWithData.forEach(v => {
-            pipeline.json.set(namespace + '.' + v.id, '$', v as any);
+            pipeline.json.set(this.getRedisKeyForDocument(namespace, v.id), '$', v as any);
         });
         await pipeline.exec();
 
@@ -218,7 +219,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
 
     async updateOldVectors(namespace: string): Promise<string> {
         const documentIds = await redis.smembers('BM25.' + namespace);
-        const documents = await redis.json.mget<VectorWithData<Metadata>[][]>(documentIds.map(d => namespace + '.' + d), '$');
+        const documents = await redis.json.mget<VectorWithData<Metadata>[][]>(documentIds.map(d => this.getRedisKeyForDocument(namespace, d)), '$');
         return await super.upsert(await Promise.all(documents.map(async d => {
             return {
                 id: d[0].id,
@@ -384,7 +385,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         delete this.BM25Statistics[namespace];
         const documentIds = await redis.smembers('BM25.' + namespace);
         const infoDel = redis.json.del('BM25-info', this.getPathForStats(namespace));
-        const documentDel = redis.del('BM25.' + namespace, ...documentIds.map(d => namespace + '.' + d));
+        const documentDel = redis.del('BM25.' + namespace, ...documentIds.map(d => this.getRedisKeyForDocument(namespace, d)));
         await Promise.all([infoDel, documentDel]);
         await super.reset(options);
         return 'Success';
@@ -394,7 +395,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         delete this.BM25Statistics[namespace];
         const documentIds = await redis.smembers('BM25.' + namespace);
         const infoDel = redis.json.del('BM25-info', this.getPathForStats(namespace));
-        const documentDel = redis.del('BM25.' + namespace, ...documentIds.map(d => namespace + '.' + d));
+        const documentDel = redis.del('BM25.' + namespace, ...documentIds.map(d => this.getRedisKeyForDocument(namespace, d)));
         await Promise.all([infoDel, documentDel]);
         await super.deleteNamespace(namespace);
         return 'Success';

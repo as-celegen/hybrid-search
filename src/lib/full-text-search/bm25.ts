@@ -419,23 +419,22 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
 
     async reset(options?: CommandOptions): Promise<string> {
         const namespace = options?.namespace ?? "";
-        delete this.BM25Statistics[namespace];
+        this.BM25Statistics[namespace] = defaultNamespaceInfo;
         const documentIds = await redis.smembers(this.getKeyForNamespaceSet(namespace));
-        const infoReset = redis.json.set(this.getKeyForNamespace(namespace), '$', defaultNamespaceInfo);
+        const infoClear = redis.json.clear(this.getKeyForNamespace(namespace));
         const documentDel = redis.del(this.getKeyForNamespaceSet(namespace), ...documentIds.map(d => this.getRedisKeyForDocument(namespace, d)));
-        await Promise.all([infoReset, documentDel]);
-        await super.reset(options);
+        const indexReset = super.reset(options);
+        await Promise.all([infoClear, documentDel, indexReset]);
         return 'Success';
     }
 
     async deleteNamespace(namespace: string): Promise<string> {
         delete this.BM25Statistics[namespace];
         const documentIds = await redis.smembers(this.getKeyForNamespaceSet(namespace));
-        const infoDel = redis.json.del(this.getKeyForNamespace(namespace));
-        const documentDel = redis.del(this.getKeyForNamespaceSet(namespace), ...documentIds.map(d => this.getRedisKeyForDocument(namespace, d)));
+        const documentDel = redis.del(this.getKeyForNamespace(namespace), this.getKeyForNamespaceSet(namespace), ...documentIds.map(d => this.getRedisKeyForDocument(namespace, d)));
         const namespaceDel = redis.srem('BM25.namespaces', namespace);
-        await Promise.all([infoDel, documentDel, namespaceDel]);
-        await super.deleteNamespace(namespace);
+        const indexDel = super.deleteNamespace(namespace);
+        await Promise.all([documentDel, namespaceDel,indexDel]);
         return 'Success';
     }
 }

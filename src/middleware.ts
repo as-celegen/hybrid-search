@@ -32,7 +32,10 @@ export default async function middleware(
 
     const res = success
         ? NextResponse.next()
-        : NextResponse.redirect(new URL("/api/blocked", request.url));
+        : NextResponse.json(
+            { error: "Rate limit exceeded" },
+            { status: 429 },
+        );
 
     res.headers.set("X-RateLimit-Limit", limit.toString());
     res.headers.set("X-RateLimit-Remaining", remaining.toString());

@@ -18,7 +18,7 @@ export async function POST(req: NextRequest, { params }: { params?: { namespace:
     }
     const documents: VectorWithData[] = Array.isArray(body) ? body : [body];
     const namespace = params?.namespace?.join('/') ?? "";
-    await semanticSearch.upsert(documents, {namespace});
+    waitUntil(semanticSearch.upsert(documents, {namespace}));
     waitUntil(fullTextSearch.upsert(documents, {namespace}));
 
     return NextResponse.json({result: 'Success'});

@@ -17,7 +17,7 @@ interface WordStatistic extends Record<string, unknown> {
 
 type WordStatistics = Record<string, WordStatistic>;
 
-interface BM25NamespaceInfo extends Record<string, unknown> {
+export interface BM25NamespaceInfo extends Record<string, unknown> {
     wordStatistics: WordStatistics;
     numberOfDocuments: number;
     indexedNumberOfDocuments: number;
@@ -75,6 +75,15 @@ const addWordToStatisticsScript: string = `
     return index
 `;
 
+const defaultNamespaceInfo = {
+    wordStatistics: {},
+    numberOfDocuments: 0,
+    indexedNumberOfDocuments: 0,
+    totalDocumentLength: 0,
+    indexedTotalDocumentLength: 0,
+    numberOfWords: 0
+};
+
 export class BM25Search<Metadata extends Record<string, unknown> = Record<string, unknown>> extends SearchIndex<Metadata> {
     private BM25Statistics: BM25Info = {};
     private ready: Promise<boolean>;
@@ -86,10 +95,10 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
     private addWordToStatisticsScriptSha: string = '';
     private namespaceDefiningPromises: Record<string, Promise<boolean>> = {};
 
-    getKeyForNamespace = (namespace: string) => `BM25.info.${JSON.stringify(namespace)}`;
-    getKeyForNamespaceSet = (namespace: string) => 'BM25.' + JSON.stringify(namespace);
+    getKeyForNamespace = (namespace: string) => `BM25.info.${namespace}`;
+    getKeyForNamespaceSet = (namespace: string) => 'BM25.set.' + namespace;
     getPathForWordStats = (word: string) => `$.wordStatistics[${JSON.stringify(word)}]`;
-    getRedisKeyForDocument = (namespace: string, id: string | number) => 'BM25.document.' + JSON.stringify(namespace) + '.' + JSON.stringify(id.toString());
+    getRedisKeyForDocument = (namespace: string, id: string | number) => 'BM25.document.' + namespace + '.' + id.toString();
 
 
     constructor(BM25SearchIndexConfig?: BM25SearchIndexConfig<Metadata>) {
@@ -232,25 +241,17 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
             return true;
         }
         if(this.namespaceDefiningPromises[namespace] === undefined) {
-            const defaultNamespace = {
-                wordStatistics: {},
-                numberOfDocuments: 0,
-                indexedNumberOfDocuments: 0,
-                totalDocumentLength: 0,
-                indexedTotalDocumentLength: 0,
-                numberOfWords: 0
-            };
-            this.namespaceDefiningPromises[namespace] = redis.json.set(this.getKeyForNamespace(namespace), '$', defaultNamespace, {nx: true}).then(async (response) => {
+            this.namespaceDefiningPromises[namespace] = redis.json.set(this.getKeyForNamespace(namespace), '$', defaultNamespaceInfo, {nx: true}).then(async (response) => {
                 if (response === null) {
                     const remoteNamespace = await redis.json.get<BM25NamespaceInfo[]>(this.getKeyForNamespace(namespace), '$');
                     if(remoteNamespace !== null) {
                         this.BM25Statistics[namespace] = remoteNamespace[0];
                     } else {
-                        this.BM25Statistics[namespace] = defaultNamespace;
+                        this.BM25Statistics[namespace] = defaultNamespaceInfo;
                     }
                 } else {
                     await redis.sadd('BM25.namespaces', namespace);
-                    this.BM25Statistics[namespace] = defaultNamespace;
+                    this.BM25Statistics[namespace] = defaultNamespaceInfo;
                 }
                 return true;
             });
@@ -420,9 +421,9 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         const namespace = options?.namespace ?? "";
         delete this.BM25Statistics[namespace];
         const documentIds = await redis.smembers(this.getKeyForNamespaceSet(namespace));
-        const infoDel = redis.json.del(this.getKeyForNamespace(namespace));
+        const infoReset = redis.json.set(this.getKeyForNamespace(namespace), '$', defaultNamespaceInfo);
         const documentDel = redis.del(this.getKeyForNamespaceSet(namespace), ...documentIds.map(d => this.getRedisKeyForDocument(namespace, d)));
-        await Promise.all([infoDel, documentDel]);
+        await Promise.all([infoReset, documentDel]);
         await super.reset(options);
         return 'Success';
     }

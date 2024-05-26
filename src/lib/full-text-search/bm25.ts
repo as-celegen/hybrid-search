@@ -143,13 +143,13 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         }
         const namespace = options?.namespace ?? "";
         const vector = await this.getVectorOfQuery(args.data, namespace);
-        return await super.query({
+        return (await super.query<TMetadata>({
             topK: args.topK,
             vector,
             includeVectors: args.includeVectors,
             includeMetadata: args.includeMetadata,
             filter: args.filter,
-        }, {namespace});
+        }, {namespace})).filter(r => r.score !== 0.5);
     }
 
     async upsert<TMetadata extends Record<string, unknown> = Metadata>(args: UpsertCommandPayload<TMetadata>, options?:CommandOptions): Promise<string> {

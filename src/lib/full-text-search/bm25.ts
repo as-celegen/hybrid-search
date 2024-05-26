@@ -294,23 +294,25 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
 
     async removeTokensFromStatistics(tokenizedDocuments: string[][], namespace: string): Promise<void> {
         const wordsToDecrement: Record<string, number> = {}
-        tokenizedDocuments.forEach(document => {
+        await Promise.all(tokenizedDocuments.map(async document => {
             const words: Set<string> = new Set(document);
-            words.forEach(word => {
-                if (!this.BM25Statistics[namespace].wordStatistics[word]) {
-                    return;
+            await Promise.all(Array.from(words).map(async word => {
+                if (typeof this.BM25Statistics[namespace].wordStatistics[word] !== "object") {
+                    const wordStatistic = await redis.json.get<WordStatistic>('BM25-info', this.getPathForWordStats(namespace, word));
+                    if(wordStatistic !== null) {
+                        this.BM25Statistics[namespace].wordStatistics[word] = wordStatistic;
+                    } else {
+                        return;
+                    }
                 }
                 // Special case - word = constructor
                 if(typeof wordsToDecrement[word] !== 'number') {
                     wordsToDecrement[word] = 0;
                 }
-                if(this.BM25Statistics[namespace].wordStatistics[word].numberOfDocumentsContainingWord-- > 0) {
-                    wordsToDecrement[word] = (wordsToDecrement[word] ?? 0) + 1;
-                }else {
-                    this.BM25Statistics[namespace].wordStatistics[word].numberOfDocumentsContainingWord = 0;
-                }
-            });
-        });
+                this.BM25Statistics[namespace].wordStatistics[word].numberOfDocumentsContainingWord--;
+                wordsToDecrement[word] = (wordsToDecrement[word] ?? 0) + 1;
+            }));
+        }));
         const numberOfDocumentsToRemove = tokenizedDocuments.length;
         const totalDocumentLengthToRemove = tokenizedDocuments.reduce((acc, document) => acc + document.length, 0);
         const wordsToDecrementEntries = Object.entries(wordsToDecrement);
@@ -375,11 +377,13 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
 
         await Promise.all(words.map(async (word) => {
             let index = this.BM25Statistics[namespace].wordStatistics[word]?.index ?? -1;
-            if(index === -1){
+            let numberOfDocumentsContainingWord = this.BM25Statistics[namespace].wordStatistics[word]?.numberOfDocumentsContainingWord;
+            if(index === -1 || numberOfDocumentsContainingWord < 0){
                 let remoteWord = await redis.json.get<WordStatistic>('BM25-info', this.getPathForWordStats(namespace, word));
-                if(remoteWord !== null && remoteWord.index !== -1) {
+                if(remoteWord !== null && remoteWord.index !== -1 && remoteWord.numberOfDocumentsContainingWord >= 0) {
                     this.BM25Statistics[namespace].wordStatistics[word] = remoteWord;
                     index = remoteWord.index;
+                    numberOfDocumentsContainingWord = remoteWord.numberOfDocumentsContainingWord;
                     if(this.BM25Statistics[namespace].wordStatistics[word].index >= this.BM25Statistics[namespace].numberOfWords) {
                         vector.push(...Array(this.BM25Statistics[namespace].wordStatistics[word].index - this.BM25Statistics[namespace].numberOfWords + 1).fill(0))
                         this.BM25Statistics[namespace].numberOfWords = this.BM25Statistics[namespace].wordStatistics[word].index + 1;
@@ -388,7 +392,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
                     return;
                 }
             }
-            vector[index] += Math.log((this.BM25Statistics[namespace].numberOfDocuments + 1)/(this.BM25Statistics[namespace].wordStatistics[word].numberOfDocumentsContainingWord + 0.5));
+            vector[index] += Math.log((this.BM25Statistics[namespace].numberOfDocuments + 1)/(numberOfDocumentsContainingWord + 0.5));
         }));
 
         return vector;

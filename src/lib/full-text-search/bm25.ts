@@ -89,7 +89,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
     private addWordToStatisticsScriptSha: string = '';
 
     getPathForStats = (namespace: string) => `$[${JSON.stringify(namespace)}]`;
-    getPathForWordStats = (namespace: string, word: string) => `$[${JSON.stringify(namespace)}].wordStatistics.${word}`;
+    getPathForWordStats = (namespace: string, word: string) => `$[${JSON.stringify(namespace)}].wordStatistics[${JSON.stringify(word)}]`;
     getRedisKeyForDocument = (namespace: string, id: string | number) => JSON.stringify(namespace) + '.' + JSON.stringify(id.toString());
 
 
@@ -257,7 +257,6 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
                     this.BM25Statistics[namespace].wordStatistics[word].index = response[0];
                     this.BM25Statistics[namespace].numberOfWords = Math.max(this.BM25Statistics[namespace].numberOfWords, response[1]);
                 }
-                this.BM25Statistics[namespace].wordStatistics[word].numberOfDocumentsContainingWord++;
                 wordsToIncrease[word] = (wordsToIncrease[word] ?? 0) + 1;
             }));
         }));

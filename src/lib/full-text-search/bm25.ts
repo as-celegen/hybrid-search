@@ -42,18 +42,17 @@ export type VectorWithData<Metadata extends Record<string, unknown> = Record<str
 };
 
 const indexedValuesSyncScript: string = `
-    local namespace = ARGV[1]
-    local numberOfDocuments = cjson.decode(redis.call('JSON.GET', KEYS[1], '$[' .. namespace .. '].numberOfDocuments'))[1]
-    local totalDocumentLength = cjson.decode(redis.call('JSON.GET', KEYS[1], '$[' .. namespace .. '].totalDocumentLength'))[1]
-    local indexedNumberOfDocuments = cjson.decode(redis.call('JSON.GET', KEYS[1], '$[' .. namespace .. '].indexedNumberOfDocuments'))[1]
-    local indexedTotalDocumentLength = cjson.decode(redis.call('JSON.GET', KEYS[1], '$[' .. namespace .. '].indexedTotalDocumentLength'))[1]
+    local numberOfDocuments = cjson.decode(redis.call('JSON.GET', KEYS[1], '$.numberOfDocuments'))[1]
+    local totalDocumentLength = cjson.decode(redis.call('JSON.GET', KEYS[1], '$.totalDocumentLength'))[1]
+    local indexedNumberOfDocuments = cjson.decode(redis.call('JSON.GET', KEYS[1], '$.indexedNumberOfDocuments'))[1]
+    local indexedTotalDocumentLength = cjson.decode(redis.call('JSON.GET', KEYS[1], '$.indexedTotalDocumentLength'))[1]
           
     if (indexedNumberOfDocuments == 0 or indexedTotalDocumentLength == 0 or (
         (indexedNumberOfDocuments * 0.5 > numberOfDocuments or indexedNumberOfDocuments * 2 < numberOfDocuments) and
             math.abs((indexedTotalDocumentLength / indexedNumberOfDocuments) - (totalDocumentLength / numberOfDocuments)) > (indexedTotalDocumentLength / indexedNumberOfDocuments) * 0.1
         )) then
-            redis.call('JSON.SET', KEYS[1], '$[' .. namespace .. '].indexedNumberOfDocuments', numberOfDocuments)
-            redis.call('JSON.SET', KEYS[1], '$[' .. namespace .. '].indexedTotalDocumentLength', totalDocumentLength)
+            redis.call('JSON.SET', KEYS[1], '$.indexedNumberOfDocuments', numberOfDocuments)
+            redis.call('JSON.SET', KEYS[1], '$.indexedTotalDocumentLength', totalDocumentLength)
             return {(indexedNumberOfDocuments == 0) and 1 or 2, numberOfDocuments, numberOfDocuments, totalDocumentLength}
     else
             return {0, numberOfDocuments, indexedNumberOfDocuments, indexedTotalDocumentLength}
@@ -61,18 +60,17 @@ const indexedValuesSyncScript: string = `
     `;
 
 const addWordToStatisticsScript: string = `
-    local namespace = ARGV[1]
-    local word = ARGV[2]
+    local word = ARGV[1]
     local defaultWordStatistics = {numberOfDocumentsContainingWord = 0, index = -1}
-    local response = redis.call('JSON.SET', KEYS[1], '$[' .. namespace .. '].wordStatistics[' .. word .. ']', cjson.encode(defaultWordStatistics), 'NX')
+    local response = redis.call('JSON.SET', KEYS[1], '$.wordStatistics[' .. word .. ']', cjson.encode(defaultWordStatistics), 'NX')
     local index = -1
     local numberOfWords = -1
     if response ~= nil then
-        numberOfWords = cjson.decode(redis.call('JSON.NUMINCRBY', KEYS[1], '$[' .. namespace .. '].numberOfWords', 1))[1]
-        redis.call('JSON.SET', KEYS[1], '$[' .. namespace .. '].wordStatistics[' .. word .. '].index', numberOfWords - 1)
+        numberOfWords = cjson.decode(redis.call('JSON.NUMINCRBY', KEYS[1], '$.numberOfWords', 1))[1]
+        redis.call('JSON.SET', KEYS[1], '$.wordStatistics[' .. word .. '].index', numberOfWords - 1)
         index = numberOfWords - 1
     else
-        index = cjson.decode(redis.call('JSON.GET', KEYS[1], '$[' .. namespace .. '].wordStatistics[' .. word .. '].index'))[1]
+        index = cjson.decode(redis.call('JSON.GET', KEYS[1], '$.wordStatistics[' .. word .. '].index'))[1]
     end
     return index
 `;
@@ -86,10 +84,12 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
     private tokenizer: (text: string) => string[];
     private indexedValuesSyncScriptSha: string = '';
     private addWordToStatisticsScriptSha: string = '';
+    private namespaceDefiningPromises: Record<string, Promise<boolean>> = {};
 
-    getPathForStats = (namespace: string) => `$[${JSON.stringify(namespace)}]`;
-    getPathForWordStats = (namespace: string, word: string) => `$[${JSON.stringify(namespace)}].wordStatistics[${JSON.stringify(word)}]`;
-    getRedisKeyForDocument = (namespace: string, id: string | number) => JSON.stringify(namespace) + '.' + JSON.stringify(id.toString());
+    getKeyForNamespace = (namespace: string) => `BM25.info.${JSON.stringify(namespace)}`;
+    getKeyForNamespaceSet = (namespace: string) => 'BM25.' + JSON.stringify(namespace);
+    getPathForWordStats = (word: string) => `$.wordStatistics[${JSON.stringify(word)}]`;
+    getRedisKeyForDocument = (namespace: string, id: string | number) => 'BM25.document.' + JSON.stringify(namespace) + '.' + JSON.stringify(id.toString());
 
 
     constructor(BM25SearchIndexConfig?: BM25SearchIndexConfig<Metadata>) {
@@ -101,17 +101,16 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         this.k = BM25SearchIndexConfig?.k ?? 1.5;
         this.tokenizer = BM25SearchIndexConfig?.tokenizer ?? ((text: string) => text.match(/\w+/g)?.map(s => s.toLowerCase()) ?? []);
 
-        this.ready = redis.json.set('BM25-info', '$', {}, {nx: true}).then(async (response) => {
-            [this.indexedValuesSyncScriptSha, this.addWordToStatisticsScriptSha] = await Promise.all([redis.scriptLoad(indexedValuesSyncScript), redis.scriptLoad(addWordToStatisticsScript)])
-            if(response === 'OK') {
-                this.BM25Statistics = {};
-            } else {
-                const info = await redis.json.get<BM25Info>('BM25-info');
-                if (info) {
-                    this.BM25Statistics = info;
-                } else {
-                    return false;
-                }
+        this.ready = redis.smembers('BM25.namespaces').then(async (response) => {
+            this.indexedValuesSyncScriptSha = await redis.scriptLoad(indexedValuesSyncScript);
+            this.addWordToStatisticsScriptSha = await redis.scriptLoad(addWordToStatisticsScript);
+            if(response.length !== 0) {
+                const infos = await redis.json.mget<(BM25NamespaceInfo | null)[][]>(response.map(ns => this.getKeyForNamespace(ns)), '$');
+                infos.forEach((info, i) => {
+                    if(info[0] !== null) {
+                        this.BM25Statistics[response[i]] = info[0];
+                    }
+                });
             }
             return true;
         });
@@ -125,7 +124,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         const argsArray = Array.isArray(args) ? args : [args];
 
         const oldContents = await redis.json.mget<string[][]>(argsArray.map(a => this.getRedisKeyForDocument(namespace, a)), '$.data');
-        await Promise.all([redis.del(...argsArray.map(a => this.getRedisKeyForDocument(namespace, a))), redis.srem('BM25.' + namespace, ...argsArray)]);
+        await Promise.all([redis.del(...argsArray.map(a => this.getRedisKeyForDocument(namespace, a))), redis.srem(this.getKeyForNamespaceSet(namespace), ...argsArray)]);
 
         await this.removeTokensFromStatistics(oldContents.map(r => r !== null ? this.tokenizer(r[0]) : []), namespace);
 
@@ -178,7 +177,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
             return 'Failed';
         }
 
-        const isOldDocument = await redis.smismember('BM25.' + namespace, argsWithData.map(d => d.id));
+        const isOldDocument = await redis.smismember(this.getKeyForNamespaceSet(namespace), argsWithData.map(d => d.id));
         const existingDocumentIds = argsWithData.filter((_, i) => isOldDocument[i] === 1).map(d => d.id);
         if (existingDocumentIds.length > 0) {
             const existingDocuments = await redis.json.mget<string[][]>(existingDocumentIds.map(d => this.getRedisKeyForDocument(namespace, d)), '$.data');
@@ -189,7 +188,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         await this.checkAndRebuild(namespace);
 
         const pipeline = redis.pipeline();
-        pipeline.sadd('BM25.' + namespace, ...argsWithData.map(d => d.id));
+        pipeline.sadd(this.getKeyForNamespaceSet(namespace), ...argsWithData.map(d => d.id));
         argsWithData.forEach(v => {
             pipeline.json.set(this.getRedisKeyForDocument(namespace, v.id), '$', v as any);
         });
@@ -205,7 +204,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
     }
 
     async checkAndRebuild(namespace: string): Promise<void> {
-        const response = await redis.evalsha<[string], [number, number, number, number]>(this.indexedValuesSyncScriptSha, ['BM25-info'], [JSON.stringify(namespace)]);
+        const response = await redis.evalsha<[], [number, number, number, number]>(this.indexedValuesSyncScriptSha, [this.getKeyForNamespace(namespace)], []);
         this.BM25Statistics[namespace].numberOfDocuments = response[1];
         this.BM25Statistics[namespace].indexedNumberOfDocuments = response[2];
         this.BM25Statistics[namespace].indexedTotalDocumentLength = response[3];
@@ -217,7 +216,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
     }
 
     async updateOldVectors(namespace: string): Promise<string> {
-        const documentIds = await redis.smembers('BM25.' + namespace);
+        const documentIds = await redis.smembers(this.getKeyForNamespaceSet(namespace));
         const documents = await redis.json.mget<VectorWithData<Metadata>[][]>(documentIds.map(d => this.getRedisKeyForDocument(namespace, d)), '$');
         return await super.upsert(await Promise.all(documents.map(async d => {
             return {
@@ -228,9 +227,12 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         })), {namespace});
     }
 
-    async addTokensToStatistics(tokenizedDocuments: string[][], namespace: string): Promise<void> {
-        if (!this.BM25Statistics[namespace]) {
-            this.BM25Statistics[namespace] = {
+    async defineNamespace(namespace: string): Promise<boolean> {
+        if(this.BM25Statistics[namespace]){
+            return true;
+        }
+        if(this.namespaceDefiningPromises[namespace] === undefined) {
+            const defaultNamespace = {
                 wordStatistics: {},
                 numberOfDocuments: 0,
                 indexedNumberOfDocuments: 0,
@@ -238,10 +240,27 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
                 indexedTotalDocumentLength: 0,
                 numberOfWords: 0
             };
-            const response = await redis.json.set('BM25-info', this.getPathForStats(namespace), this.BM25Statistics[namespace], {nx: true});
-            if(response === null) {
-                this.BM25Statistics[namespace] = await redis.json.get<BM25NamespaceInfo>('BM25-info', this.getPathForStats(namespace)) ?? this.BM25Statistics[namespace];
-            }
+            this.namespaceDefiningPromises[namespace] = redis.json.set(this.getKeyForNamespace(namespace), '$', defaultNamespace, {nx: true}).then(async (response) => {
+                if (response === null) {
+                    const remoteNamespace = await redis.json.get<BM25NamespaceInfo[]>(this.getKeyForNamespace(namespace), '$');
+                    if(remoteNamespace !== null) {
+                        this.BM25Statistics[namespace] = remoteNamespace[0];
+                    } else {
+                        this.BM25Statistics[namespace] = defaultNamespace;
+                    }
+                } else {
+                    await redis.sadd('BM25.namespaces', namespace);
+                    this.BM25Statistics[namespace] = defaultNamespace;
+                }
+                return true;
+            });
+        }
+        return await this.namespaceDefiningPromises[namespace];
+    }
+
+    async addTokensToStatistics(tokenizedDocuments: string[][], namespace: string): Promise<void> {
+        if (!await this.defineNamespace(namespace)) {
+            return;
         }
         const wordsToIncrease: Record<string, number> = {};
         const pipelineForNewWords = redis.pipeline();
@@ -249,17 +268,14 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         await Promise.all(tokenizedDocuments.map(async document => {
             const words: Set<string> = new Set(document);
             await Promise.all(Array.from(words).map(async word => {
-                if (typeof this.BM25Statistics[namespace].wordStatistics[word] !== "object") {
+                word = JSON.stringify(word);
+                if (!this.BM25Statistics[namespace].wordStatistics[word]) {
                     this.BM25Statistics[namespace].wordStatistics[word] = {
                         numberOfDocumentsContainingWord: 0,
                         index: -1,
                     };
                     newWords.push(word);
-                    pipelineForNewWords.evalsha<[string, string], number>(this.addWordToStatisticsScriptSha, ['BM25-info'], [JSON.stringify(namespace), JSON.stringify(word)]);
-                }
-                // Special case - word = constructor
-                if(typeof wordsToIncrease[word] !== 'number') {
-                    wordsToIncrease[word] = 0;
+                    pipelineForNewWords.evalsha(this.addWordToStatisticsScriptSha, [this.getKeyForNamespace(namespace)], [JSON.stringify(word)]);
                 }
                 wordsToIncrease[word] = (wordsToIncrease[word] ?? 0) + 1;
             }));
@@ -268,8 +284,8 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         if(pipelineForNewWords.length() != 0) {
             const resultsForNewWords = await pipelineForNewWords.exec<number[]>();
             resultsForNewWords.forEach((index, i) => {
-                this.BM25Statistics[namespace].wordStatistics[newWords[i]].index = index;
-                this.BM25Statistics[namespace].numberOfWords = Math.max(this.BM25Statistics[namespace].numberOfWords, index + 1);
+                    this.BM25Statistics[namespace].wordStatistics[newWords[i]].index = index;
+                    this.BM25Statistics[namespace].numberOfWords = Math.max(this.BM25Statistics[namespace].numberOfWords, index + 1);
             });
         }
         const totalDocumentLengthToAdd = tokenizedDocuments.reduce((acc, document) => acc + document.length, 0);
@@ -277,11 +293,11 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
 
         const pipeline = redis.pipeline();
 
-        pipeline.json.numincrby('BM25-info', this.getPathForStats(namespace) + '.numberOfDocuments', tokenizedDocuments.length);
-        pipeline.json.numincrby('BM25-info', this.getPathForStats(namespace) + '.totalDocumentLength', totalDocumentLengthToAdd);
+        pipeline.json.numincrby(this.getKeyForNamespace(namespace), '$.numberOfDocuments', tokenizedDocuments.length);
+        pipeline.json.numincrby(this.getKeyForNamespace(namespace), '$.totalDocumentLength', totalDocumentLengthToAdd);
 
         wordsToIncreaseEntries
-            .forEach(([word, count]) => pipeline.json.numincrby('BM25-info',  this.getPathForWordStats(namespace, word) + '.numberOfDocumentsContainingWord', count));
+            .forEach(([word, count]) => pipeline.json.numincrby(this.getKeyForNamespace(namespace),  this.getPathForWordStats(word) + '.numberOfDocumentsContainingWord', count));
         const results = await pipeline.exec<number[][]>();
 
         this.BM25Statistics[namespace].numberOfDocuments = results[0][0];
@@ -294,20 +310,20 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
 
     async removeTokensFromStatistics(tokenizedDocuments: string[][], namespace: string): Promise<void> {
         const wordsToDecrement: Record<string, number> = {}
+        if (!await this.defineNamespace(namespace)) {
+            return;
+        }
         await Promise.all(tokenizedDocuments.map(async document => {
             const words: Set<string> = new Set(document);
             await Promise.all(Array.from(words).map(async word => {
-                if (typeof this.BM25Statistics[namespace].wordStatistics[word] !== "object") {
-                    const wordStatistic = await redis.json.get<WordStatistic>('BM25-info', this.getPathForWordStats(namespace, word));
+                word = JSON.stringify(word);
+                if (!this.BM25Statistics[namespace].wordStatistics[word]) {
+                    const wordStatistic = await redis.json.get<WordStatistic>(this.getKeyForNamespace(namespace), this.getPathForWordStats(word));
                     if(wordStatistic !== null) {
                         this.BM25Statistics[namespace].wordStatistics[word] = wordStatistic;
                     } else {
                         return;
                     }
-                }
-                // Special case - word = constructor
-                if(typeof wordsToDecrement[word] !== 'number') {
-                    wordsToDecrement[word] = 0;
                 }
                 this.BM25Statistics[namespace].wordStatistics[word].numberOfDocumentsContainingWord--;
                 wordsToDecrement[word] = (wordsToDecrement[word] ?? 0) + 1;
@@ -318,11 +334,11 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         const wordsToDecrementEntries = Object.entries(wordsToDecrement);
 
         const pipeline = redis.pipeline();
-        pipeline.json.numincrby('BM25-info', this.getPathForStats(namespace) + '.numberOfDocuments', -numberOfDocumentsToRemove);
-        pipeline.json.numincrby('BM25-info', this.getPathForStats(namespace) + '.totalDocumentLength', -totalDocumentLengthToRemove);
+        pipeline.json.numincrby(this.getKeyForNamespace(namespace), '$.numberOfDocuments', -numberOfDocumentsToRemove);
+        pipeline.json.numincrby(this.getKeyForNamespace(namespace), '$.totalDocumentLength', -totalDocumentLengthToRemove);
 
         wordsToDecrementEntries
-            .forEach(([word, count]) => pipeline.json.numincrby('BM25-info', this.getPathForWordStats(namespace, word) + '.numberOfDocumentsContainingWord', -count));
+            .forEach(([word, count]) => pipeline.json.numincrby(this.getKeyForNamespace(namespace), this.getPathForWordStats(word) + '.numberOfDocumentsContainingWord', -count));
         const results = await pipeline.exec<number[][]>();
 
         this.BM25Statistics[namespace].numberOfDocuments = results[0][0];
@@ -334,7 +350,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
     }
 
     async getVectorOfDocument(tokens: string[], namespace: string): Promise<number[]> {
-        if (!this.BM25Statistics || !this.BM25Statistics[namespace]) {
+        if (!await this.defineNamespace(namespace)) {
             return [];
         }
         const tokenCounts : Record<string, number> = {};
@@ -342,6 +358,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         const averageDocumentLength = this.BM25Statistics[namespace].indexedTotalDocumentLength / this.BM25Statistics[namespace].indexedNumberOfDocuments;
 
         tokens.map((token) => {
+            token = JSON.stringify(token);
             tokenCounts[token] = (tokenCounts[token] ?? 0) + 1;
         });
 
@@ -349,7 +366,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
             tokenCount = tokenCount ?? 0;
             let index = this.BM25Statistics[namespace].wordStatistics[token]?.index ?? -1;
             if(index === -1){
-                let remoteWord = await redis.json.get<WordStatistic>('BM25-info', this.getPathForWordStats(namespace, token));
+                let remoteWord = await redis.json.get<WordStatistic>(this.getKeyForNamespace(namespace), this.getPathForWordStats(token));
                 if(remoteWord !== null && remoteWord.index !== -1) {
                     this.BM25Statistics[namespace].wordStatistics[token] = remoteWord;
                     index = remoteWord.index;
@@ -369,17 +386,18 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
     }
 
     async getVectorOfQuery(text: string, namespace: string): Promise<number[]> {
-        if (!this.BM25Statistics || !this.BM25Statistics[namespace]) {
+        if (!await this.defineNamespace(namespace)) {
             return [];
         }
         const words: string[] = this.tokenizer(text);
         const vector: number[] = Array(this.BM25Statistics[namespace].numberOfWords).fill(0);
 
         await Promise.all(words.map(async (word) => {
+            word = JSON.stringify(word);
             let index = this.BM25Statistics[namespace].wordStatistics[word]?.index ?? -1;
             let numberOfDocumentsContainingWord = this.BM25Statistics[namespace].wordStatistics[word]?.numberOfDocumentsContainingWord;
             if(index === -1 || numberOfDocumentsContainingWord < 0){
-                let remoteWord = await redis.json.get<WordStatistic>('BM25-info', this.getPathForWordStats(namespace, word));
+                let remoteWord = await redis.json.get<WordStatistic>(this.getKeyForNamespace(namespace), this.getPathForWordStats(word));
                 if(remoteWord !== null && remoteWord.index !== -1 && remoteWord.numberOfDocumentsContainingWord >= 0) {
                     this.BM25Statistics[namespace].wordStatistics[word] = remoteWord;
                     index = remoteWord.index;
@@ -401,9 +419,9 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
     async reset(options?: CommandOptions): Promise<string> {
         const namespace = options?.namespace ?? "";
         delete this.BM25Statistics[namespace];
-        const documentIds = await redis.smembers('BM25.' + namespace);
-        const infoDel = redis.json.del('BM25-info', this.getPathForStats(namespace));
-        const documentDel = redis.del('BM25.' + namespace, ...documentIds.map(d => this.getRedisKeyForDocument(namespace, d)));
+        const documentIds = await redis.smembers(this.getKeyForNamespaceSet(namespace));
+        const infoDel = redis.json.del(this.getKeyForNamespace(namespace));
+        const documentDel = redis.del(this.getKeyForNamespaceSet(namespace), ...documentIds.map(d => this.getRedisKeyForDocument(namespace, d)));
         await Promise.all([infoDel, documentDel]);
         await super.reset(options);
         return 'Success';
@@ -411,10 +429,11 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
 
     async deleteNamespace(namespace: string): Promise<string> {
         delete this.BM25Statistics[namespace];
-        const documentIds = await redis.smembers('BM25.' + namespace);
-        const infoDel = redis.json.del('BM25-info', this.getPathForStats(namespace));
-        const documentDel = redis.del('BM25.' + namespace, ...documentIds.map(d => this.getRedisKeyForDocument(namespace, d)));
-        await Promise.all([infoDel, documentDel]);
+        const documentIds = await redis.smembers(this.getKeyForNamespaceSet(namespace));
+        const infoDel = redis.json.del(this.getKeyForNamespace(namespace));
+        const documentDel = redis.del(this.getKeyForNamespaceSet(namespace), ...documentIds.map(d => this.getRedisKeyForDocument(namespace, d)));
+        const namespaceDel = redis.srem('BM25.namespaces', namespace);
+        await Promise.all([infoDel, documentDel, namespaceDel]);
         await super.deleteNamespace(namespace);
         return 'Success';
     }

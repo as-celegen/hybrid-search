@@ -51,7 +51,7 @@ SEMANTIC_SEARCH_VECTOR_INDEX_TOKEN=
 
 Deploying to Vercel is the easiest way to deploy the server. You can deploy the server by clicking the button below.
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/project?template=)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fupstash%2Fhybrid-search&env=UPSTASH_REDIS_REST_URL,UPSTASH_REDIS_REST_TOKEN,FULL_TEXT_SEARCH_VECTOR_INDEX_URL,FULL_TEXT_SEARCH_VECTOR_INDEX_TOKEN,SEMANTIC_SEARCH_VECTOR_INDEX_URL,SEMANTIC_SEARCH_VECTOR_INDEX_TOKEN&project-name=hybrid-search-server)
 
 #### Local Deployment
 

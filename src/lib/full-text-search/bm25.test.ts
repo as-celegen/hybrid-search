@@ -88,7 +88,7 @@ describe('BM25 Search', () => {
     });
 
     it('should rebuild if necessary', async () => {
-        await search.reset({namespace: 'test-2'});
+        await search.deleteNamespace('test-2');
         await search.upsert(documents.slice(0, 2), {namespace: 'test-2'});
         await new Promise(resolve => setTimeout(resolve, 1000));
         // @ts-expect-error
@@ -160,7 +160,7 @@ describe('BM25 Search', () => {
     });
 
     it('should delete documents', async () => {
-        await search.reset({namespace: 'test-6'});
+        await search.deleteNamespace('test-6');
         await search.upsert(documents, {namespace: 'test-6'});
         await new Promise(resolve => setTimeout(resolve, 1000));
         // @ts-expect-error

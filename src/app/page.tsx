@@ -1,7 +1,7 @@
 'use client';
 
 import SearchBox from "@/components/search-box";
-import {useEffect, useState} from "react";
+import React, {useEffect, useState} from "react";
 import {Index, QueryResult} from '@upstash/vector';
 import Link from 'next/link';
 
@@ -13,13 +13,18 @@ interface SampleMetadata extends Record<string, unknown>{
 }
 
 export default function Home() {
-    let index: Index<SampleMetadata>;
-    if(typeof window !== 'undefined') {
-        index = new Index({
-            url: window.location.origin,
-            token: 'placeholder-token',
-        });
-    }
+    const [namespaces, setNamespaces] = useState<string[]>([]);
+    const [results, setResults] = useState<QueryResult<SampleMetadata>[]>([]);
+    const [index, setIndex] = useState<Index | undefined>(() => {
+        if(typeof window !== 'undefined') {
+            return new Index({
+                url: window.location.origin,
+                token: 'placeholder-token',
+            });
+        }
+        return undefined;
+    });
+
     const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         const namespace = e.currentTarget.querySelector('select')?.value;
@@ -27,7 +32,7 @@ export default function Home() {
         if (!data) {
             return;
         }
-        index.query<SampleMetadata>({
+        index?.query<SampleMetadata>({
             data,
             includeVectors: false,
             includeMetadata: true,
@@ -36,23 +41,22 @@ export default function Home() {
             setResults(results);
         });
     };
-    const [namespaces, setNamespaces] = useState<string[]>([]);
-    const [results, setResults] = useState<QueryResult<SampleMetadata>[]>([]);
+
 
     useEffect(() => {
-        index.listNamespaces().then((namespaces) => {
+        index?.listNamespaces().then((namespaces) => {
             setNamespaces(namespaces);
         });
-    }, []);
+    }, [index]);
 
     return (
         <main className="flex min-h-screen flex-col items-center p-24 bg-gray-700">
             <SearchBox onSubmit={onSubmit} namespaces={namespaces}/>
             <div className="mt-6">
                 {results.map((result) => (
-                    <div key={result.id}>
+                    <div key={result.id} className="mb-3">
                         <Link key={result.id} href={`${process.env.NEXT_PUBLIC_ROOT_URL}${result.metadata?.path}`}>
-                            <h2>{result.metadata?.path}</h2>
+                            <h2 className="text-xl">{result.metadata?.path}</h2>
                         </Link>
                         <p>{result.metadata?.preview}</p>
                     </div>

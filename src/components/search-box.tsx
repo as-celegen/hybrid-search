@@ -5,16 +5,20 @@ export interface SearchBoxProps {
 
 export default function SearchBox({ onSubmit, namespaces }: SearchBoxProps) {
     return (
-        <form className="flex flex-row items-center justify-center w-full" onSubmit={onSubmit}>
-            <label>Search: </label>
-            <input required type={"text"} className="bg-amber-100 text-blue-700"/>
-            <label>Namespace: </label>
-            <select className="bg-amber-100 text-blue-700">
-                {namespaces.map((namespace) => (
-                    <option key={namespace} value={namespace} className="bg-amber-100 text-blue-700">{namespace.length == 0 ? <i>(Default)</i>: namespace}</option>
-                ))}
-            </select>
-            <button type={"submit"}>Search</button>
+        <form className="flex flex-row items-center justify-evenly w-full justify-self-stretch" onSubmit={onSubmit}>
+            <div>
+                <label className="text-lg">Search: </label>
+                <input required type={"text"} className="bg-amber-100 text-blue-700 rounded"/>
+            </div>
+            <div>
+                <label className="text-lg">Namespace: </label>
+                <select className="bg-amber-100 text-blue-700 rounded">
+                    {namespaces.map((namespace) => (
+                        <option key={namespace} value={namespace} className="bg-amber-100 text-blue-700">{namespace.length == 0 ? "(Default)" : namespace}</option>
+                    ))}
+                </select>
+            </div>
+            <button type={"submit"} className="bg-red-500 hover:bg-red-700 rounded p-1" >Search</button>
         </form>
     );
 }

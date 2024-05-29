@@ -16,6 +16,9 @@ export class MinMaxNormalization extends HybridSearch {
                 } else {
                     acc[id].score += (score - min)/ (max - min);
                     acc[id].metadata = { ...acc[id].metadata, ...rest.metadata };
+                    if(acc[id].vector === undefined) {
+                        acc[id].vector = rest.vector;
+                    }
                 }
             });
             return acc;

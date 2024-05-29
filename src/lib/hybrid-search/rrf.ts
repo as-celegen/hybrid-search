@@ -19,6 +19,9 @@ export class RRF extends HybridSearch {
                 } else {
                     acc[id].score += 1.0/(this.k + index);
                     acc[id].metadata = { ...acc[id].metadata, ...rest.metadata };
+                    if(acc[id].vector === undefined) {
+                        acc[id].vector = rest.vector;
+                    }
                 }
             });
             return acc;

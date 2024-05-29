@@ -17,6 +17,9 @@ export class StandardNormalization extends HybridSearch {
                     } else {
                         acc[id].score += (score - mean) / stdDev;
                         acc[id].metadata = { ...acc[id].metadata, ...rest.metadata };
+                        if(acc[id].vector === undefined) {
+                            acc[id].vector = rest.vector;
+                        }
                     }
                 });
             }

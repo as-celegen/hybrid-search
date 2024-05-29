@@ -58,7 +58,7 @@ Deploying to Vercel is the easiest way to deploy the server. You can deploy the 
 To deploy the server manually, you can clone the repository and deploy it to your preferred platform.
 
 ```bash
-git clone
+git clone https://github.com/upstash/hybrid-search
 cd hybrid-search
 npm install
 npm run build
@@ -80,7 +80,7 @@ type Metadata = {
 
 const index = new Index<Metadata>({
   url: "<HYBRID_SEARCH_REST_URL>",
-  token: "<UPSTASH_VECTOR_REST_TOKEN>",
+  token: "<SEMANTIC_SEARCH_VECTOR_REST_TOKEN>",
 });
 
 //Upsert Data
@@ -147,7 +147,7 @@ Following endpoints are implemented and they are compatible with upstash vector 
 - list-namespaces
 - delete-namespace
 
-Endpoints which can return vectors will return semantic embedding vectors is includeVectors field is set to true.
+Endpoints which can return vectors will return semantic embedding vectors if includeVectors field is set to true.
 
 ## Additional Notes
 

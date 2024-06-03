@@ -3,7 +3,7 @@ import {
     CommandOptions,
     DeleteCommandPayload, FetchCommandOptions,
     FetchCommandPayload, IndexFunctions,
-    QueryCommandPayload, RangeCommandPayload,
+    QueryCommandPayload, RangeCommandPayload, UpdateCommandPayload,
     UpsertCommandPayload
 } from "@/types/vector";
 
@@ -95,20 +95,14 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
             id: string | number;
             vector: number[];
             metadata?: Record<string, unknown>;
-        }[] | {
-            id: string | number;
-            vector: undefined;
-            metadata: Record<string, unknown>;
         }[] = Array.isArray(args) ? args : [args];
         this.namespacePartitions[options?.namespace ?? ""] = Math.max(
             this.namespacePartitions[options?.namespace ?? ""] ?? 0,
             argsArray.reduce((acc, arg) => Math.max(acc, Math.ceil((arg.vector?.length ?? 0)/this.dimension)), 0)
         );
         const partitionCount = this.namespacePartitions[options?.namespace ?? ""];
-        const argsWithJustMetadata = argsArray.flatMap((arg) => arg.vector === undefined ? [arg] : []);
-        const argsWithVectors = argsArray.flatMap((arg) => (arg.vector !== undefined) ? [arg] : []);
         const partitionedVectors = Array(partitionCount).fill(0).map((_, index) => {
-            return argsWithVectors.map((arg) => {
+            return argsArray.map((arg) => {
                 let vector = arg.vector.slice(index * this.dimension, (index + 1) * this.dimension);
                 if(vector.length < this.dimension){
                     vector = vector.concat(Array(this.dimension - vector.length).fill(0));
@@ -120,12 +114,51 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
             });
         });
         const results = await Promise.all(partitionedVectors.map((vectors, index) =>{
-            if(vectors.length === 0 && argsWithJustMetadata.length === 0){
+            if(vectors.length === 0){
                 return 'Success';
             }
-            return this.index.upsert<Record<string, unknown>>([...vectors, ...argsWithJustMetadata], {namespace: this.addPartitionInfoToNamespace(options?.namespace ?? "", index)});
+            return this.index.upsert<Record<string, unknown>>([...vectors], {namespace: this.addPartitionInfoToNamespace(options?.namespace ?? "", index)});
         }));
         return results.every(r => r === 'Success') ? 'Success' : 'Failure';
+    }
+
+    async update<TMetadata extends Record<string, unknown> = Metadata>(args: UpdateCommandPayload<TMetadata>, options?: CommandOptions): Promise<{ updated: number; }> {
+        if (!await this.ready || this.dimension === 0) {
+            return {updated: 0};
+        }
+        if('data' in args){
+            return await this.index.update(args, options);
+        }
+        if('metadata' in args){
+            return await Promise.all(Array(this.namespacePartitions[options?.namespace ?? ""] ?? 1).fill(0).map(
+                (_, index) => this.index.update<Record<string, unknown>>(args, {namespace: this.addPartitionInfoToNamespace(options?.namespace ?? "", index)})
+            )).then(results => {
+                return {
+                    updated: results.reduce((acc, result) => Math.max(acc, result.updated), 0)
+                };
+            });
+        }
+        this.namespacePartitions[options?.namespace ?? ""] = Math.max(
+            this.namespacePartitions[options?.namespace ?? ""] ?? 0,
+            Math.ceil((args.vector?.length ?? 0)/this.dimension)
+        );
+        const partitionCount = this.namespacePartitions[options?.namespace ?? ""];
+        const partitionedVectors = Array(partitionCount).fill(0).map((_, index) => {
+            let vector = args.vector.slice(index * this.dimension, (index + 1) * this.dimension);
+            if(vector.length < this.dimension){
+                vector = vector.concat(Array(this.dimension - vector.length).fill(0));
+            }
+            return {
+                ...args,
+                vector,
+            };
+        });
+        const results = await Promise.all(partitionedVectors.map((payload, index) =>{
+            return this.index.update<Record<string, unknown>>(payload, {namespace: this.addPartitionInfoToNamespace(options?.namespace ?? "", index)});
+        }));
+        return {
+            updated: results.reduce((acc, result) => Math.max(acc, result.updated), 0)
+        };
     }
 
     async fetch<TMetadata extends Record<string, unknown> = Metadata>(ids: FetchCommandPayload, opts?: FetchCommandOptions): Promise<FetchResult<TMetadata>[]> {

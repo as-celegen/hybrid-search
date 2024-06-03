@@ -3,7 +3,7 @@ import {
     CommandOptions,
     DeleteCommandPayload, FetchCommandOptions,
     FetchCommandPayload, IndexFunctions,
-    QueryCommandPayload, RangeCommandPayload,
+    QueryCommandPayload, RangeCommandPayload, UpdateCommandPayload,
     UpsertCommandPayload
 } from "@/types/vector";
 
@@ -30,6 +30,9 @@ export abstract class SearchIndex<Metadata extends Record<string, unknown> = Rec
     }
     async upsert<TMetadata extends Record<string, unknown> = Metadata>(args: UpsertCommandPayload<TMetadata>, options?: CommandOptions): Promise<string>{
         return await this.index.upsert<Record<string, unknown>>(args, {namespace: this.addSearchTypeToNamespace(options?.namespace ?? "")});
+    }
+    async update<TMetadata extends Record<string, unknown> = Metadata>(args: UpdateCommandPayload<TMetadata>, options?: CommandOptions): Promise<{updated: number}>{
+        return await this.index.update<Record<string, unknown>>(args, {namespace: this.addSearchTypeToNamespace(options?.namespace ?? "")});
     }
     async fetch<TMetadata extends Record<string, unknown> = Metadata>(args: FetchCommandPayload, options?: FetchCommandOptions): Promise<FetchResult<TMetadata>[]>{
         return await this.index.fetch(args, {...options, namespace: this.addSearchTypeToNamespace(options?.namespace ?? "")});

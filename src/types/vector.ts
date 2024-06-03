@@ -12,6 +12,8 @@ export type DeleteCommandPayload = Parameters<Index['delete']>[0];
 
 export type UpsertCommandPayload<Metadata extends Record<string, unknown>> = Parameters<Index<Metadata>['upsert']>[0];
 
+export type UpdateCommandPayload<TMetadata extends Record<string, unknown>> = Parameters<Index<TMetadata>['update']>[0];
+
 export type CommandOptions = Parameters<Index['upsert']>[1];
 
 type PickMatching<T, V> = {

@@ -6,7 +6,7 @@ import {
     CommandOptions,
     DeleteCommandPayload,
     IndexFunctions,
-    QueryCommandPayload,
+    QueryCommandPayload, UpdateCommandPayload,
     UpsertCommandPayload
 } from "@/types/vector";
 
@@ -157,17 +157,6 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
             return 'Success';
         }
         if ((Array.isArray(args) && !('data' in args[0])) || (!Array.isArray(args) && !('data' in args))) {
-            if (!Array.isArray(args) && !('vector' in args)) {
-                await redis.json.set(this.getRedisKeyForDocument(namespace, args.id), '$.metadata', args.metadata as any);
-            } else if (Array.isArray(args)) {
-                const pipeline = redis.pipeline();
-                args.forEach(v => {
-                    if (!('vector' in v)) {
-                        pipeline.json.set(this.getRedisKeyForDocument(namespace, v.id), '$.metadata', v.metadata as any);
-                    }
-                });
-                await pipeline.exec();
-            }
             return await super.upsert(args, {namespace});
         }
         // @ts-ignore
@@ -194,13 +183,43 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         });
         await pipeline.exec();
 
-        return super.upsert(await Promise.all(argsWithData.map(async a => {
+        return super.upsert<TMetadata>(await Promise.all(argsWithData.map(async a => {
             return {
                 id: a.id,
                 vector: await this.getVectorOfDocument(this.tokenizer(a.data), namespace),
                 metadata: a.metadata,
             };
         })), {namespace});
+    }
+
+    async update<TMetadata extends Record<string, unknown> = Metadata>(args: UpdateCommandPayload<TMetadata>, options?: CommandOptions): Promise<{updated: number}> {
+        const namespace = options?.namespace ?? "";
+
+        if ('metadata' in args) {
+            await redis.json.set(this.getRedisKeyForDocument(namespace, args.id), '$.metadata', args.metadata);
+            return await super.update(args, options);
+        }
+        if('vector' in args) {
+            return super.update(args, options);
+        }
+        if (!await this.defineNamespace(namespace)) {
+            return {updated: 0};
+        }
+
+        const oldData = await redis.json.get<string[]>(this.getRedisKeyForDocument(namespace, args.id), '$.data');
+        if(oldData === null) {
+            return {updated: 0};
+        }
+        await this.removeTokensFromStatistics([this.tokenizer(oldData[0])], namespace);
+        await this.addTokensToStatistics([this.tokenizer(args.data)], namespace);
+        await this.checkAndRebuild(namespace);
+
+        await redis.json.set(this.getRedisKeyForDocument(namespace, args.id), '$.data', args.data);
+
+        return await super.update<TMetadata>({
+            id: args.id,
+            vector: await this.getVectorOfDocument(this.tokenizer(args.data), namespace),
+        }, options);
     }
 
     async checkAndRebuild(namespace: string): Promise<void> {

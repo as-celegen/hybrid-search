@@ -11,7 +11,7 @@
   "dependencies": {
     "@upstash/ratelimit": "^1.0.1",
     "@upstash/redis": "^1.31.2",
-    "@upstash/vector": "^1.1.1",
+    "@upstash/vector": "^1.1.2",
     "@vercel/functions": "^1.0.2",
     "next": "^14.2.3",
     "react": "^18.3.1",

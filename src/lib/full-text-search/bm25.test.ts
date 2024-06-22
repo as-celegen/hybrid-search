@@ -65,10 +65,12 @@ describe('BM25 Search', () => {
         expect(redisInfo).toEqual(statistics);
         expect(redisInfo).not.toBeNull();
         expect({...redisInfo, wordStatistics: undefined}).toEqual({
-            numberOfDocuments: 6,
-            totalDocumentLength: 15,
-            indexedNumberOfDocuments: 6,
-            indexedTotalDocumentLength: 15,
+            indexStatistics: {
+                numberOfDocuments: 6,
+                totalDocumentLength: 15,
+                indexedNumberOfDocuments: 6,
+                indexedTotalDocumentLength: 15
+            },
             numberOfWords: 9,
         });
         Object.entries(wordCounts).forEach(([word, count]) => expect(redisInfo.wordStatistics[word].numberOfDocumentsContainingWord).toEqual(count));
@@ -97,10 +99,12 @@ describe('BM25 Search', () => {
         const redisInfo: BM25NamespaceInfo = await redis.json.get( `BM25.info.test-2`);
         expect(redisInfo).toEqual(statistics);
         expect({...redisInfo, wordStatistics: undefined}).toEqual({
-            numberOfDocuments: 2,
-            totalDocumentLength: 4,
-            indexedNumberOfDocuments: 2,
-            indexedTotalDocumentLength: 4,
+            indexStatistics: {
+                numberOfDocuments: 2,
+                totalDocumentLength: 4,
+                indexedNumberOfDocuments: 2,
+                indexedTotalDocumentLength: 4
+            },
             numberOfWords: 2,
         });
         Object.entries({'"hello"': 2, '"world"': 2}).forEach(([word, count]) => expect(redisInfo.wordStatistics[word].numberOfDocumentsContainingWord).toEqual(count));
@@ -126,10 +130,12 @@ describe('BM25 Search', () => {
         const redisInfo2: BM25NamespaceInfo = await redis.json.get(`BM25.info.test-2`);
         expect(redisInfo2).toEqual(statistics2);
         expect({...redisInfo2, wordStatistics: undefined}).toEqual({
-            numberOfDocuments: 6,
-            totalDocumentLength: 15,
-            indexedNumberOfDocuments: 6,
-            indexedTotalDocumentLength: 15,
+            indexStatistics:{
+                numberOfDocuments: 6,
+                totalDocumentLength: 15,
+                indexedNumberOfDocuments: 6,
+                indexedTotalDocumentLength: 15
+            },
             numberOfWords: 9,
         });
         Object.entries(wordCounts).forEach(([word, count]) => expect(redisInfo2.wordStatistics[word].numberOfDocumentsContainingWord).toEqual(count));
@@ -147,12 +153,11 @@ describe('BM25 Search', () => {
         expectedVector.forEach((value, index) => expect(value).toBeCloseTo(vector2[1]?.vector[index] ?? 0, 5));
     }, 10000);
 
-    it.skip('should update metadata', async () => {
-        // TODO: Fix this test
+    it('should update metadata', async () => {
         await search.reset({namespace: 'test-3'});
         await search.upsert(documents, {namespace: 'test-3'});
         await new Promise(resolve => setTimeout(resolve, 1000));
-        await search.upsert({id: '1', metadata: {title: 'test'}}, {namespace: 'test-3'});
+        await search.update({id: '1', metadata: {title: 'test'}}, {namespace: 'test-3'});
         const vector = await bigIndex.fetch(['1'], {namespace: 'test-3%20BM25',includeMetadata: true, includeVectors: false});
         expectTypeOf(vector).toBeArray();
         expect(vector.filter(i => i !== null)).toHaveLength(1);
@@ -170,10 +175,12 @@ describe('BM25 Search', () => {
         expect(redisInfo).toEqual(statistics);
         expect(redisInfo).not.toBeNull();
         expect({...redisInfo, wordStatistics: undefined}).toEqual({
-            numberOfDocuments: 6,
-            totalDocumentLength: 15,
-            indexedNumberOfDocuments: 6,
-            indexedTotalDocumentLength: 15,
+            indexStatistics:{
+                numberOfDocuments: 6,
+                totalDocumentLength: 15,
+                indexedNumberOfDocuments: 6,
+                indexedTotalDocumentLength: 15
+            },
             numberOfWords: 9,
         });
 
@@ -184,10 +191,12 @@ describe('BM25 Search', () => {
         expect(redisInfo2).toEqual(statistics);
         expect(redisInfo2).not.toBeNull();
         expect({...redisInfo2, wordStatistics: undefined}).toEqual({
-            numberOfDocuments: 2,
-            totalDocumentLength: 3,
-            indexedNumberOfDocuments: 2,
-            indexedTotalDocumentLength: 3,
+            indexStatistics:{
+                numberOfDocuments: 2,
+                totalDocumentLength: 3,
+                indexedNumberOfDocuments: 2,
+                indexedTotalDocumentLength: 3
+            },
             numberOfWords: 9,
         });
         Object.entries({...wordCounts, '"hello"': 0, '"world"': 0, '"lorem"': 0, '"ipsum"': 0, '"dolor"': 0, '"sit"': 0, '"amet"': 0}).forEach(([word, count]) => expect(redisInfo2.wordStatistics[word].numberOfDocumentsContainingWord).toEqual(count));
@@ -234,10 +243,12 @@ describe('BM25 Search', () => {
         expect(redisInfo).not.toBeNull();
         expect(redisInfo).toEqual({
             wordStatistics: {},
-            numberOfDocuments: 0,
-            indexedNumberOfDocuments: 0,
-            totalDocumentLength: 0,
-            indexedTotalDocumentLength: 0,
+            indexStatistics:{
+                numberOfDocuments: 0,
+                indexedNumberOfDocuments: 0,
+                totalDocumentLength: 0,
+                indexedTotalDocumentLength: 0
+            },
             numberOfWords: 0
         });
         expect(await redis.exists('BM25.set.test-7', ...documents.map(d => `BM25.document.test-7.${d.id}`))).toBe(0);

@@ -21,18 +21,44 @@ This allows the usage of upstash vector SDKs for doing necessary operations like
 - Supports namespaces for multi-tenancy
 - BM25 algorithm for full-text search
 
+## Background
+
+Full-text search and semantic search are two different search techniques that are used to search for information in a database.
+
+Full-text search is a technique used to search for exact matches of words or phrases in a database. 
+BM25 algorithm is used in this project as the ranking algorithm for full-text search. 
+BM25 calculates score based on the frequency of the term in the document, length of the document and frequency of the term in the whole collection.
+Biggest problem with full-text search is that it can't understand the meaning of the words, so it can't provide relevant results for the queries that are semantically similar but not exactly the same.
+
+Semantic search is a technique used to search for information based on the meaning of the words.
+It uses semantic embeddings to represent the meaning of the words in a vector space.
+Various similarity metrics can be used to calculate the similarity between the vectors.
+In this project, model embedding feature of upstash vector is used to provide semantic search capabilities.
+Model embedding is a feature that allows you to use pre-trained models to generate embedding vectors for given text data.
+Biggest problem with semantic search is that it can estimate higher similarity between the vectors of the words that are semantically similar, compared to the vectors of the words that are exactly the same.
+
+## Motivation
+
+Full-text search and semantic search have their own strengths and weaknesses. 
+Hybrid search aims to combine their strengths to overcome their weaknesses.
+
+Multiple algorithms have been implemented to combine full-text search and semantic search results.
+Default algorithm is reciprocal rank fusion which takes the ranks of the documents from full-text search and semantic search results and combines them to provide a new rank for the documents.
+
+By combining full-text search and semantic search results; we can provide more relevant results for the queries that are semantically similar but not exactly the same or for the queries that are exactly the same but have different meanings.
+
 ## Setup
 
 ### Prerequisites
 
 - Upstash Redis Database
-- Upstash Vector Database with configured Model Embedding (Semantic Search)
-- Upstash Vector Database with dot product similarity metric and recommended dimension of 3072 
-(For further configuration please refer to the additional notes) (Full Text Search)
+- Upstash Vector Database with configured Model Embedding for Semantic Search
+- Upstash Vector Database with dot product similarity metric and recommended dimension of 3072 for Full Text Search
 
 ### Configuration
 
 Environment variables should be set for the server to work properly. URLs and tokens should be obtained from the upstash vector and upstash redis dashboards.
+For further configuration please refer to the additional notes.
 
 ```env
 UPSTASH_REDIS_REST_URL=
@@ -68,7 +94,11 @@ npm start
 
 ## Basic Usage
 
-Note: For simplicity hybrid search server will use the same token as the vector database for semantic search.
+Hybrid search server provides endpoints that are compatible with the upstash vector endpoints. 
+This allows usage of upstash vector SDKs to interact with the server.
+
+HYBRID_SEARCH_REST_URL below should be the URL of the hybrid search server deployment.
+For simplicity hybrid search server will use the same token as the vector database for semantic search.
 
 ```ts
 import { Index } from "@upstash/vector";
@@ -139,6 +169,7 @@ Following endpoints are implemented and they are compatible with upstash vector 
 
 - upsert-data
 - query-data
+- update
 - delete
 - fetch
 - range
@@ -154,5 +185,7 @@ Endpoints which can return vectors will return semantic embedding vectors if inc
 - Default algorithm used for combining full-text search and semantic search results is reciprocal rank fusion.
 Standard Normalization and Min-Max Normalization are implemented and they can be used by setting the
 'HYBRID_SEARCH_ALGORITHM' environment variable to 'STANDARD_NORMALIZATION' or 'MIN_MAX_NORMALIZATION' respectively.
-- Full text search vector index dimension should be; higher if number of queries will be relatively higher than the number of documents or lower if number of queries will be relatively lower than the number of documents.
-
+- Full text search vector index dimension will represent the number of unique words in the collection. 
+If the number of unique words in the collection is less than configured dimension, server will start dividing vectors into multiple parts and will add padding to end of last vector.
+If number of queries is expected to be high, it is recommended to set the dimension to a higher value for minimizing the request count.
+If number of documents is expected to be high, it is recommended to set the dimension to a lower value for minimizing the storage cost of paddings in the end of vectors.

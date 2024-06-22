@@ -16,6 +16,9 @@ export async function POST(req: NextRequest, { params }: { params?: { namespace:
     ) {
         return NextResponse.json({result: 'Missing body fields'}, {status: 400});
     }
+    if((!Array.isArray(body) && 'vector' in body) || (Array.isArray(body) && body.some(doc => 'vector' in doc))) {
+        return NextResponse.json({result: 'Vector field is not allowed'}, {status: 400});
+    }
     const documents: VectorWithData[] = Array.isArray(body) ? body : [body];
     const namespace = params?.namespace?.join('/') ?? "";
     waitUntil(semanticSearch.upsert(documents, {namespace}));

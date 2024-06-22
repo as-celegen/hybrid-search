@@ -42,17 +42,18 @@ export type VectorWithData<Metadata extends Record<string, unknown> = Record<str
 };
 
 const indexedValuesSyncScript: string = `
-    local numberOfDocuments = cjson.decode(redis.call('JSON.GET', KEYS[1], '$.numberOfDocuments'))[1]
-    local totalDocumentLength = cjson.decode(redis.call('JSON.GET', KEYS[1], '$.totalDocumentLength'))[1]
-    local indexedNumberOfDocuments = cjson.decode(redis.call('JSON.GET', KEYS[1], '$.indexedNumberOfDocuments'))[1]
-    local indexedTotalDocumentLength = cjson.decode(redis.call('JSON.GET', KEYS[1], '$.indexedTotalDocumentLength'))[1]
+    local namespaceObject = KEYS[1]
+    local numberOfDocuments = cjson.decode(redis.call('JSON.GET', namespaceObject, '$.numberOfDocuments'))[1]
+    local totalDocumentLength = cjson.decode(redis.call('JSON.GET', namespaceObject, '$.totalDocumentLength'))[1]
+    local indexedNumberOfDocuments = cjson.decode(redis.call('JSON.GET', namespaceObject, '$.indexedNumberOfDocuments'))[1]
+    local indexedTotalDocumentLength = cjson.decode(redis.call('JSON.GET', namespaceObject, '$.indexedTotalDocumentLength'))[1]
           
     if (indexedNumberOfDocuments == 0 or indexedTotalDocumentLength == 0 or (
         (indexedNumberOfDocuments * 0.5 > numberOfDocuments or indexedNumberOfDocuments * 2 < numberOfDocuments) and
             math.abs((indexedTotalDocumentLength / indexedNumberOfDocuments) - (totalDocumentLength / numberOfDocuments)) > (indexedTotalDocumentLength / indexedNumberOfDocuments) * 0.1
         )) then
-            redis.call('JSON.SET', KEYS[1], '$.indexedNumberOfDocuments', numberOfDocuments)
-            redis.call('JSON.SET', KEYS[1], '$.indexedTotalDocumentLength', totalDocumentLength)
+            redis.call('JSON.SET', namespaceObject, '$.indexedNumberOfDocuments', numberOfDocuments)
+            redis.call('JSON.SET', namespaceObject, '$.indexedTotalDocumentLength', totalDocumentLength)
             return {(indexedNumberOfDocuments == 0) and 1 or 2, numberOfDocuments, numberOfDocuments, totalDocumentLength}
     else
             return {0, numberOfDocuments, indexedNumberOfDocuments, indexedTotalDocumentLength}
@@ -61,16 +62,16 @@ const indexedValuesSyncScript: string = `
 
 const addWordToStatisticsScript: string = `
     local word = ARGV[1]
+    local namespaceObject = KEYS[1]
     local defaultWordStatistics = {numberOfDocumentsContainingWord = 0, index = -1}
-    local response = redis.call('JSON.SET', KEYS[1], '$.wordStatistics[' .. word .. ']', cjson.encode(defaultWordStatistics), 'NX')
+    local response = redis.call('JSON.SET', namespaceObject, '$.wordStatistics[' .. word .. ']', cjson.encode(defaultWordStatistics), 'NX')
     local index = -1
-    local numberOfWords = -1
     if response ~= nil then
-        numberOfWords = cjson.decode(redis.call('JSON.NUMINCRBY', KEYS[1], '$.numberOfWords', 1))[1]
-        redis.call('JSON.SET', KEYS[1], '$.wordStatistics[' .. word .. '].index', numberOfWords - 1)
+        local numberOfWords = cjson.decode(redis.call('JSON.NUMINCRBY', namespaceObject, '$.numberOfWords', 1))[1]
+        redis.call('JSON.SET', namespaceObject, '$.wordStatistics[' .. word .. '].index', numberOfWords - 1)
         index = numberOfWords - 1
     else
-        index = cjson.decode(redis.call('JSON.GET', KEYS[1], '$.wordStatistics[' .. word .. '].index'))[1]
+        index = cjson.decode(redis.call('JSON.GET', namespaceObject, '$.wordStatistics[' .. word .. '].index'))[1]
     end
     return index
 `;
@@ -269,7 +270,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
 
     async addTokensToStatistics(tokenizedDocuments: string[][], namespace: string): Promise<void> {
         if (!await this.defineNamespace(namespace)) {
-            return;
+            throw new Error('Namespace not defined');
         }
         const wordsToIncrease: Record<string, number> = {};
         const pipelineForNewWords = redis.pipeline();
@@ -320,7 +321,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
     async removeTokensFromStatistics(tokenizedDocuments: string[][], namespace: string): Promise<void> {
         const wordsToDecrement: Record<string, number> = {}
         if (!await this.defineNamespace(namespace)) {
-            return;
+            throw new Error('Namespace not defined');
         }
         await Promise.all(tokenizedDocuments.map(async document => {
             const words: Set<string> = new Set(document);
@@ -360,7 +361,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
 
     async getVectorOfDocument(tokens: string[], namespace: string): Promise<number[]> {
         if (!await this.defineNamespace(namespace)) {
-            return [];
+            throw new Error('Namespace not defined');
         }
         const tokenCounts : Record<string, number> = {};
         const vector: number[] = Array(this.BM25Statistics[namespace].numberOfWords).fill(0);
@@ -396,7 +397,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
 
     async getVectorOfQuery(text: string, namespace: string): Promise<number[]> {
         if (!await this.defineNamespace(namespace)) {
-            return [];
+            throw new Error('Namespace not defined');
         }
         const words: string[] = this.tokenizer(text);
         const vector: number[] = Array(this.BM25Statistics[namespace].numberOfWords).fill(0);

@@ -16,8 +16,10 @@ export async function POST(req: NextRequest, { params }: { params?: { namespace:
     }
 
     const namespace = params?.namespace?.join('/') ?? "";
-    waitUntil(semanticSearch.update(body, {namespace}));
-    waitUntil(fullTextSearch.update(body, {namespace}));
+    const updated = await Promise.all([
+        semanticSearch.update(body, {namespace}),
+        fullTextSearch.update(body, {namespace})
+    ]).then(([a, b]) => (a.updated + b.updated)/2);
 
-    return NextResponse.json({result: 'Success'});
+    return NextResponse.json({result: { updated } });
 }

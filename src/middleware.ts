@@ -9,6 +9,7 @@ const ratelimit = new Ratelimit({
 });
 
 const allAccessToken = process.env.SEMANTIC_SEARCH_VECTOR_INDEX_TOKEN ?? '';
+const readOnlyAccessToken = process.env.READ_ONLY_TOKEN ?? '';
 
 export default async function middleware(
     request: NextRequest,
@@ -16,10 +17,13 @@ export default async function middleware(
 ): Promise<Response | undefined> {
 
     const pathSegments = request.nextUrl.pathname.split("/");
-    if(pathSegments.length > 1 && ['delete', 'delete-namespace', 'reset', 'upsert', 'upsert-data'].includes(pathSegments[1])) {
-        const accessToken = request.headers.get('Authorization')?.replace('Bearer ', '');
-
+    const accessToken = request.headers.get('Authorization')?.substring(7);
+    if(pathSegments.length > 1 && ['delete', 'delete-namespace', 'reset', 'upsert', 'upsert-data', 'update'].includes(pathSegments[1])) {
         if (accessToken !== allAccessToken) {
+            return new Response('Unauthorized', {status: 401});
+        }
+    } else if(pathSegments.length > 1 && ['query-data', 'range', 'fetch', 'info', 'list-namespaces'].includes(pathSegments[1])) {
+        if (accessToken !== allAccessToken && accessToken !== readOnlyAccessToken) {
             return new Response('Unauthorized', {status: 401});
         }
     }

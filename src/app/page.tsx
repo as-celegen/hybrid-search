@@ -1,7 +1,7 @@
 'use client';
 
 import SearchBox from "@/components/search-box";
-import React, {useEffect, useState} from "react";
+import React, {useEffect, useMemo, useState} from "react";
 import {Index, QueryResult} from '@upstash/vector';
 import Link from 'next/link';
 
@@ -15,15 +15,15 @@ interface SampleMetadata extends Record<string, unknown>{
 export default function Home() {
     const [namespaces, setNamespaces] = useState<string[]>([]);
     const [results, setResults] = useState<QueryResult<SampleMetadata>[]>([]);
-    const [index, setIndex] = useState<Index | undefined>(() => {
+    const index = useMemo<Index | undefined>(() => {
         if(typeof window !== 'undefined') {
             return new Index({
                 url: window.location.origin,
-                token: 'placeholder-token',
+                token: process.env.NEXT_PUBLIC_READ_ONLY_TOKEN,
             });
         }
         return undefined;
-    });
+    }, []);
 
     const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();

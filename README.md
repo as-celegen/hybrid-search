@@ -20,6 +20,7 @@ This allows the usage of upstash vector SDKs for doing necessary operations like
 - Supports metadata filtering
 - Supports namespaces for multi-tenancy
 - BM25 algorithm for full-text search
+- Type compatibility with upstash vector SDKs
 
 ## Motivation
 

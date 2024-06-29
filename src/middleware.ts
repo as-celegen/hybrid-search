@@ -23,7 +23,7 @@ export default async function middleware(
             return new Response('Unauthorized', {status: 401});
         }
     } else if(pathSegments.length > 1 && ['query-data', 'range', 'fetch', 'info', 'list-namespaces'].includes(pathSegments[1])) {
-        if (accessToken !== allAccessToken && accessToken !== readOnlyAccessToken) {
+        if (accessToken !== allAccessToken && readOnlyAccessToken !== undefined && accessToken !== readOnlyAccessToken) {
             return new Response('Unauthorized', {status: 401});
         }
     }

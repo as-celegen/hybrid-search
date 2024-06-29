@@ -143,7 +143,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         const namespace = options?.namespace ?? "";
 
         if (!await this.defineNamespace(namespace)) {
-            return [];
+            throw new Error('Namespace definition failed.');
         }
 
         const vector = await this.getVectorOfQuery(args.data, namespace);
@@ -154,6 +154,22 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
             includeMetadata: args.includeMetadata,
             filter: args.filter,
         }, {namespace})).filter(r => r.score !== 0.5);
+    }
+    async queryMany<TMetadata extends Record<string, unknown> = Metadata>(args: QueryCommandPayload[], options?: CommandOptions): Promise<QueryResult<TMetadata>[][]>{
+        const namespace = options?.namespace ?? "";
+
+        if (!await this.defineNamespace(namespace)) {
+            throw new Error('Namespace definition failed.');
+        }
+        return (await super.queryMany<TMetadata>(await Promise.all(args.map(async a => {
+            return {
+                topK: a.topK,
+                vector: a.vector ?? (await this.getVectorOfQuery(a.data, namespace)),
+                includeVectors: a.includeVectors,
+                includeMetadata: a.includeMetadata,
+                filter: a.filter,
+            };
+        })), {namespace})).map(r => r.filter(r => r.score !== 0.5));
     }
 
     async upsert<TMetadata extends Record<string, unknown> = Metadata>(args: UpsertCommandPayload<TMetadata>, options?:CommandOptions): Promise<string> {

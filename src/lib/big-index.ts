@@ -55,8 +55,9 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
 
     async query<TMetadata extends Record<string, unknown> = Metadata>(args: QueryCommandPayload, options?: CommandOptions): Promise<QueryResult<TMetadata>[]> {
         if(!await this.ready || this.dimension === 0){
-            return [];
+            throw new Error('BigIndex preparation failed');
         }
+
         if('data' in args){
             return await this.index.query<TMetadata>(args);
         }
@@ -80,6 +81,48 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
                 .map(arg => this.index.query<TMetadata>(arg[1], {namespace: this.addPartitionInfoToNamespace(options?.namespace ?? "", arg[0])}))
         );
         return results.reduce((a, b) => this.combineResultNamespaces(a, b), []).sort((a, b) => b.score - a.score);
+    }
+
+    async queryMany<TMetadata extends Record<string, unknown> = Metadata>(args: QueryCommandPayload[], options?: CommandOptions): Promise<QueryResult<TMetadata>[][]> {
+        if(!await this.ready || this.dimension === 0){
+            throw new Error('BigIndex preparation failed');
+        }
+
+        const argsArray: Record<number, QueryCommandPayload[]> = {};
+        args.forEach(arg => {
+            if(!argsArray[0]){
+                argsArray[0] = [];
+            }
+            if('data' in arg){
+                argsArray[0].push(arg);
+                return;
+            }
+            for (let j = 0; j < Math.ceil(arg.vector.length / this.dimension); j++) {
+                let vector = arg.vector.slice(j * this.dimension, (j + 1) * this.dimension);
+                if (vector.length === 0 || vector.every((value) => value === 0)) {
+                    continue;
+                }
+                if (vector.length < this.dimension) {
+                    vector = vector.concat(Array(this.dimension - vector.length).fill(0));
+                }
+                if(!argsArray[j]){
+                    argsArray[j] = [];
+                }
+                argsArray[j].push({
+                    ...arg,
+                    vector,
+                });
+            }
+        });
+        const results = await Promise.all(
+            Object.entries(argsArray)
+                .map(arg => this.index.queryMany<TMetadata>(arg[1], {namespace: this.addPartitionInfoToNamespace(options?.namespace ?? "", arg[0])}))
+        );
+        return results.reduce((a, b) =>
+            a.map((_, i) =>
+                this.combineResultNamespaces(a[i], b[i])
+            ).map((result) =>
+                result.sort((a, b) => b.score - a.score)), []);
     }
 
     async upsert<TMetadata extends Record<string, unknown> = Metadata>(args: UpsertCommandPayload<TMetadata>, options?: CommandOptions): Promise<string> {
@@ -281,7 +324,7 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
         let metadata: TMetadata | undefined = vector2.metadata;
         return {
             id: vector1.id,
-            vector: vector1 && vector2 && vector1.vector.concat(vector2.vector),
+            vector: vector1.vector && vector2.vector && vector1.vector.concat(vector2.vector),
             metadata,
         };
     }

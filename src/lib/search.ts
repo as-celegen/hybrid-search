@@ -28,6 +28,9 @@ export abstract class SearchIndex<Metadata extends Record<string, unknown> = Rec
     async query<TMetadata extends Record<string, unknown> = Metadata>(args: QueryCommandPayload, options?: CommandOptions): Promise<QueryResult<TMetadata>[]>{
         return await this.index.query(args, {namespace: this.addSearchTypeToNamespace(options?.namespace ?? "")});
     }
+    async queryMany<TMetadata extends Record<string, unknown> = Metadata>(args: QueryCommandPayload[], options?: CommandOptions): Promise<QueryResult<TMetadata>[][]>{
+        return await this.index.queryMany(args, {namespace: this.addSearchTypeToNamespace(options?.namespace ?? "")});
+    }
     async upsert<TMetadata extends Record<string, unknown> = Metadata>(args: UpsertCommandPayload<TMetadata>, options?: CommandOptions): Promise<string>{
         return await this.index.upsert<Record<string, unknown>>(args, {namespace: this.addSearchTypeToNamespace(options?.namespace ?? "")});
     }

@@ -19,7 +19,7 @@ export default function Home() {
         if(typeof window !== 'undefined') {
             return new Index({
                 url: window.location.origin,
-                token: process.env.NEXT_PUBLIC_READ_ONLY_TOKEN,
+                token: process.env.NEXT_PUBLIC_READ_ONLY_TOKEN ?? "",
             });
         }
         return undefined;

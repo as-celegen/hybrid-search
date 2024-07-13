@@ -76,7 +76,7 @@ SEMANTIC_SEARCH_VECTOR_INDEX_TOKEN=
 - Default algorithm used for combining full-text search and semantic search results is reciprocal rank fusion.
   Standard Normalization and Min-Max Normalization are implemented and they can be used by setting the
   'HYBRID_SEARCH_ALGORITHM' environment variable to 'STANDARD_NORMALIZATION' or 'MIN_MAX_NORMALIZATION' respectively.
-- Read Only Token can be set to restrict the access to the server. If set, requests that require write access will be rejected.
+- Read Only Token can be set to restrict the access to the server. If set, requests that require write access will be rejected. (delete, delete-namespace, reset, upsert, upsert-data, update)
 ```env
 HYBRID_SEARCH_ALGORITHM=RECIPROCAL_RANK_FUSION
 READ_ONLY_TOKEN=

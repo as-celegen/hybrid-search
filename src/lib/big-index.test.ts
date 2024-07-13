@@ -54,13 +54,12 @@ describe('Big Index test', () => {
         expect(secondPartition.map(i => i !== null ? i.metadata : [])).toEqual(documents.slice(0, 2).map(i => i.metadata));
     });
 
-    it.skip('should update metadata', async () => {
-        //TODO: Fix this test
+    it('should update metadata', async () => {
         const search = new BigIndex(bigIndexConfig);
         await new Promise(resolve => setTimeout(resolve, 1000));
         const result = await search.upsert(documents, {namespace: 'test-5'});
         expect(result).toBe('Success');
-        await search.upsert([{id: '1', metadata: {title: 'Hello World'}}], {namespace: 'test-5'});
+        await search.update({id: '1', metadata: {title: 'Hello World'}}, {namespace: 'test-5'});
         const vector = await index.fetch(['1'], {includeVectors: false, includeMetadata: true, namespace: 'test-5%201%20BigIndex'});
         expectTypeOf(vector).toBeArray();
         expect(vector.filter(i => i !== null)).toHaveLength(1);
@@ -75,6 +74,15 @@ describe('Big Index test', () => {
         console.log(results);
         expect(results.length).toBeGreaterThan(0);
     }, 15000);
+
+    it('should search multiple documents at once', async () => {
+        const search = new BigIndex(bigIndexConfig);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const results = await search.queryMany([{vector: [1, 0, 0, 1, 0, 0], topK: 6}]);
+        expectTypeOf(results).toBeArray();
+        console.log(results);
+        expect(results.length).toBeGreaterThan(0);
+    }, 150000);
 
     it('should search documents in another namespace with different query size', async () => {
         const search = new BigIndex(bigIndexConfig);

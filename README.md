@@ -106,7 +106,9 @@ npm start
 ## Basic Usage
 
 Hybrid search server provides endpoints that are compatible with the upstash vector endpoints. 
-This allows usage of upstash vector SDKs to interact with the server.
+This allows usage of upstash vector SDKs to interact with the server. 
+
+See the usage of [APIs](https://upstash.com/docs/vector/api/endpoints).
 
 HYBRID_SEARCH_REST_URL below should be the URL of the hybrid search server deployment.
 For simplicity hybrid search server will use the same token as the vector database for semantic search.

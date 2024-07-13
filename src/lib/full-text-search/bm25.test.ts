@@ -85,7 +85,7 @@ describe('BM25 Search', () => {
             const expectedVector: number[] = Array(statistics.numberOfWords).fill(0);
             expectedVector[statistics.wordStatistics['"hello"'].index] = 1 / (1 + 1.5 * (1 - 0.75 + 0.75 * (2 / 2.5)));
             expectedVector[statistics.wordStatistics['"world"'].index] = 1 / (1 + 1.5 * (1 - 0.75 + 0.75 * (2 / 2.5)));
-            expectedVector.forEach((value, index) => expect(value).toBeCloseTo(v?.vector[index] ?? 0, 5));
+            expectedVector.forEach((value, index) => expect(value).toBeCloseTo(v?.vector !== undefined ? v.vector[index] : 0, 5));
         });
     });
 
@@ -119,7 +119,7 @@ describe('BM25 Search', () => {
             const expectedVector: number[] = Array(statistics.numberOfWords).fill(0);
             expectedVector[statistics.wordStatistics['"hello"'].index] = 1 / (1 + 1.5 * (1 - 0.75 + 0.75 * (2 / 2)));
             expectedVector[statistics.wordStatistics['"world"'].index] = 1 / (1 + 1.5 * (1 - 0.75 + 0.75 * (2 / 2)));
-            expectedVector.forEach((value, index) => expect(value).toBeCloseTo(v?.vector[index] ?? 0, 5));
+            expectedVector.forEach((value, index) => expect(value).toBeCloseTo(v?.vector !== undefined ? v.vector[index] : 0, 5));
         });
 
         await search.upsert(documents.slice(2), {namespace: 'test-2'});
@@ -147,10 +147,10 @@ describe('BM25 Search', () => {
         const expectedVector: number[] = Array(statistics2.numberOfWords).fill(0);
         expectedVector[statistics2.wordStatistics['"foo"'].index] = 1 / (1 + 1.5 * (1 - 0.75 + 0.75 * (2 / 2.5)));
         expectedVector[statistics2.wordStatistics['"bar"'].index] = 1 / (1 + 1.5 * (1 - 0.75 + 0.75 * (2 / 2.5)));
-        expectedVector.forEach((value, index) => expect(value).toBeCloseTo(vector2[0]?.vector[index] ?? 0, 5));
+        expectedVector.forEach((value, index) => expect(value).toBeCloseTo(vector2[0]?.vector !== undefined ? vector2[0]?.vector[index] : 0, 5));
         expectedVector[statistics2.wordStatistics['"foo"'].index] = 0;
         expectedVector[statistics2.wordStatistics['"bar"'].index] = 1 / (1 + 1.5 * (1 - 0.75 + 0.75 * (1 / 2.5)));
-        expectedVector.forEach((value, index) => expect(value).toBeCloseTo(vector2[1]?.vector[index] ?? 0, 5));
+        expectedVector.forEach((value, index) => expect(value).toBeCloseTo(vector2[1]?.vector !== undefined ? vector2[1]?.vector[index] : 0, 5));
     }, 10000);
 
     it('should update metadata', async () => {
@@ -204,21 +204,32 @@ describe('BM25 Search', () => {
 
     describe('should search documents', async () => {
         it('shorter documents should have higher score', async () => {
-            await search.upsert(documents, {namespace: 'test-4'});
+            await search.upsert(documents, {namespace: 'test-41'});
             await new Promise(resolve => setTimeout(resolve, 1000));
-            const results = await search.query({data: 'lorem', topK: 6}, {namespace: 'test-4'});
+            const results = await search.query({data: 'lorem', topK: 6}, {namespace: 'test-41'});
             expectTypeOf(results).toBeArray();
             expect(results.length).toBeGreaterThan(0);
             expect(results[0].id).toBe('4');
         });
 
         it('less common words should have higher score', async () => {
-            await search.upsert(documents, {namespace: 'test-4'});
+            await search.upsert(documents, {namespace: 'test-42'});
             await new Promise(resolve => setTimeout(resolve, 1000));
-            const results = await search.query({data: 'foo world', topK: 6}, {namespace: 'test-4'});
+            const results = await search.query({data: 'foo world', topK: 6}, {namespace: 'test-42'});
             expectTypeOf(results).toBeArray();
             expect(results.length).toBeGreaterThan(0);
             expect(results[0].id).toBe('5');
+        });
+
+        it('should be able to query multiple at once', async () => {
+            await search.upsert(documents, {namespace: 'test-43'});
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            const results = await search.queryMany([{data: 'foo world', topK: 6}, {data: 'lorem', topK: 1}], {namespace: 'test-43'});
+            expectTypeOf(results).toBeArray();
+            expect(results[0].length).toBeGreaterThan(0);
+            expect(results[0][0].id).toBe('5');
+            expect(results[1].length).toBeGreaterThan(0);
+            expect(results[1][0].id).toBe('4');
         });
     });
 

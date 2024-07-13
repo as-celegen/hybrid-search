@@ -11,8 +11,8 @@ import {
 } from "@/types/vector";
 
 interface WordStatistic extends Record<string, unknown> {
-    numberOfDocumentsContainingWord: number;
-    index: number;
+    n: number; // number of documents containing the word
+    i: number; // index of the word in the vector
 }
 
 type WordStatistics = Record<string, WordStatistic>;
@@ -66,15 +66,15 @@ const indexedValuesSyncScript: string = `
 const addWordToStatisticsScript: string = `
     local word = ARGV[1]
     local namespaceObject = KEYS[1]
-    local defaultWordStatistics = {numberOfDocumentsContainingWord = 0, index = -1}
+    local defaultWordStatistics = {n = 0, i = -1}
     local response = redis.call('JSON.SET', namespaceObject, '$.wordStatistics[' .. word .. ']', cjson.encode(defaultWordStatistics), 'NX')
     local index = -1
     if response ~= nil then
         local numberOfWords = cjson.decode(redis.call('JSON.NUMINCRBY', namespaceObject, '$.numberOfWords', 1))[1]
-        redis.call('JSON.SET', namespaceObject, '$.wordStatistics[' .. word .. '].index', numberOfWords - 1)
+        redis.call('JSON.SET', namespaceObject, '$.wordStatistics[' .. word .. '].i', numberOfWords - 1)
         index = numberOfWords - 1
     else
-        index = cjson.decode(redis.call('JSON.GET', namespaceObject, '$.wordStatistics[' .. word .. '].index'))[1]
+        index = cjson.decode(redis.call('JSON.GET', namespaceObject, '$.wordStatistics[' .. word .. '].i'))[1]
     end
     return index
 `;
@@ -302,8 +302,8 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
                 word = JSON.stringify(word);
                 if (!this.BM25Statistics[namespace].wordStatistics[word]) {
                     this.BM25Statistics[namespace].wordStatistics[word] = {
-                        numberOfDocumentsContainingWord: 0,
-                        index: -1,
+                        n: 0,
+                        i: -1,
                     };
                     newWords.push(word);
                     pipelineForNewWords.evalsha(await this.addWordToStatisticsScriptSha, [this.getKeyForNamespace(namespace)], [JSON.stringify(word)]);
@@ -328,14 +328,14 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         pipeline.json.numincrby(this.getKeyForNamespace(namespace), '$.indexStatistics.totalDocumentLength', totalDocumentLengthToAdd);
 
         wordsToIncreaseEntries
-            .forEach(([word, count]) => pipeline.json.numincrby(this.getKeyForNamespace(namespace),  this.getPathForWordStats(word) + '.numberOfDocumentsContainingWord', count));
+            .forEach(([word, count]) => pipeline.json.numincrby(this.getKeyForNamespace(namespace),  this.getPathForWordStats(word) + '.n', count));
         const results = await pipeline.exec<number[][]>();
 
         this.BM25Statistics[namespace].indexStatistics.numberOfDocuments = results[0][0];
         this.BM25Statistics[namespace].indexStatistics.totalDocumentLength = results[1][0];
 
         wordsToIncreaseEntries.forEach(([word, count], i) => {
-            this.BM25Statistics[namespace].wordStatistics[word].numberOfDocumentsContainingWord = results[i + 2][0];
+            this.BM25Statistics[namespace].wordStatistics[word].n = results[i + 2][0];
         });
     }
 
@@ -349,14 +349,14 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
             await Promise.all(Array.from(words).map(async word => {
                 word = JSON.stringify(word);
                 if (!this.BM25Statistics[namespace].wordStatistics[word]) {
-                    const wordStatistic = await redis.json.get<WordStatistic>(this.getKeyForNamespace(namespace), this.getPathForWordStats(word));
-                    if(wordStatistic !== null) {
-                        this.BM25Statistics[namespace].wordStatistics[word] = wordStatistic;
+                    const wordStatistic = await redis.json.get<WordStatistic[]>(this.getKeyForNamespace(namespace), this.getPathForWordStats(word));
+                    if(wordStatistic !== null && wordStatistic.length !== 0) {
+                        this.BM25Statistics[namespace].wordStatistics[word] = wordStatistic[0];
                     } else {
                         return;
                     }
                 }
-                this.BM25Statistics[namespace].wordStatistics[word].numberOfDocumentsContainingWord--;
+                this.BM25Statistics[namespace].wordStatistics[word].n--;
                 wordsToDecrement[word] = (wordsToDecrement[word] ?? 0) + 1;
             }));
         }));
@@ -369,14 +369,14 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         pipeline.json.numincrby(this.getKeyForNamespace(namespace), '$.indexStatistics.totalDocumentLength', -totalDocumentLengthToRemove);
 
         wordsToDecrementEntries
-            .forEach(([word, count]) => pipeline.json.numincrby(this.getKeyForNamespace(namespace), this.getPathForWordStats(word) + '.numberOfDocumentsContainingWord', -count));
+            .forEach(([word, count]) => pipeline.json.numincrby(this.getKeyForNamespace(namespace), this.getPathForWordStats(word) + '.n', -count));
         const results = await pipeline.exec<number[][]>();
 
         this.BM25Statistics[namespace].indexStatistics.numberOfDocuments = results[0][0];
         this.BM25Statistics[namespace].indexStatistics.totalDocumentLength = results[1][0];
 
         wordsToDecrementEntries.forEach(([word, count], i) => {
-            this.BM25Statistics[namespace].wordStatistics[word].numberOfDocumentsContainingWord = results[i + 2][0];
+            this.BM25Statistics[namespace].wordStatistics[word].n = results[i + 2][0];
         });
     }
 
@@ -395,13 +395,13 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
 
         await Promise.all(Object.entries(tokenCounts).map(async ([token, tokenCount]) => {
             tokenCount = tokenCount ?? 0;
-            let index = this.BM25Statistics[namespace].wordStatistics[token]?.index ?? -1;
+            let index = this.BM25Statistics[namespace].wordStatistics[token]?.i ?? -1;
             if(index === -1){
-                let remoteWord = await redis.json.get<WordStatistic>(this.getKeyForNamespace(namespace), this.getPathForWordStats(token));
-                if(remoteWord !== null && remoteWord.index !== -1) {
-                    this.BM25Statistics[namespace].wordStatistics[token] = remoteWord;
-                    index = remoteWord.index;
-                    if(this.BM25Statistics[namespace].wordStatistics[token].index >= this.BM25Statistics[namespace].numberOfWords) {
+                let remoteWord = await redis.json.get<WordStatistic[]>(this.getKeyForNamespace(namespace), this.getPathForWordStats(token));
+                if(remoteWord !== null && remoteWord.length !== 0 && remoteWord[0].index !== -1) {
+                    this.BM25Statistics[namespace].wordStatistics[token] = remoteWord[0];
+                    index = remoteWord[0].i;
+                    if(this.BM25Statistics[namespace].wordStatistics[token].i >= this.BM25Statistics[namespace].numberOfWords) {
                         vector.push(...Array(index + 1 - this.BM25Statistics[namespace].numberOfWords).fill(0))
                         this.BM25Statistics[namespace].numberOfWords = index + 1;
                     }
@@ -425,15 +425,15 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
 
         await Promise.all(words.map(async (word) => {
             word = JSON.stringify(word);
-            let index = this.BM25Statistics[namespace].wordStatistics[word]?.index ?? -1;
-            let numberOfDocumentsContainingWord = this.BM25Statistics[namespace].wordStatistics[word]?.numberOfDocumentsContainingWord ?? -1;
+            let index = this.BM25Statistics[namespace].wordStatistics[word]?.i ?? -1;
+            let numberOfDocumentsContainingWord = this.BM25Statistics[namespace].wordStatistics[word]?.n ?? -1;
             if(index === -1 || numberOfDocumentsContainingWord < 0){
-                let remoteWord = await redis.json.get<WordStatistic>(this.getKeyForNamespace(namespace), this.getPathForWordStats(word));
-                if(remoteWord !== null && remoteWord.index !== -1 && remoteWord.numberOfDocumentsContainingWord >= 0) {
-                    this.BM25Statistics[namespace].wordStatistics[word] = remoteWord;
-                    index = remoteWord.index;
-                    numberOfDocumentsContainingWord = remoteWord.numberOfDocumentsContainingWord;
-                    if(this.BM25Statistics[namespace].wordStatistics[word].index >= this.BM25Statistics[namespace].numberOfWords) {
+                let remoteWord = await redis.json.get<WordStatistic[]>(this.getKeyForNamespace(namespace), this.getPathForWordStats(word));
+                if(remoteWord !== null && remoteWord.length !== 0 && remoteWord[0].index !== -1 && remoteWord[0].n >= 0) {
+                    this.BM25Statistics[namespace].wordStatistics[word] = remoteWord[0];
+                    index = remoteWord[0].i;
+                    numberOfDocumentsContainingWord = remoteWord[0].n;
+                    if(this.BM25Statistics[namespace].wordStatistics[word].i >= this.BM25Statistics[namespace].numberOfWords) {
                         vector.push(...Array(index + 1 - this.BM25Statistics[namespace].numberOfWords).fill(0))
                         this.BM25Statistics[namespace].numberOfWords = index + 1;
                     }

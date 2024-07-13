@@ -73,7 +73,7 @@ describe('BM25 Search', () => {
             },
             numberOfWords: 9,
         });
-        Object.entries(wordCounts).forEach(([word, count]) => expect(redisInfo.wordStatistics[word].numberOfDocumentsContainingWord).toEqual(count));
+        Object.entries(wordCounts).forEach(([word, count]) => expect(redisInfo.wordStatistics[word].n).toEqual(count));
         const vector = await bigIndex.fetch(['1', '2'], {namespace: 'test-1%20BM25',includeMetadata: true, includeVectors: true});
         expectTypeOf(vector).toBeArray();
         expect(vector.filter(i => i !== null)).toHaveLength(2);
@@ -83,8 +83,8 @@ describe('BM25 Search', () => {
             expectTypeOf(v).toBeObject;
             expect(v?.metadata).toEqual(documents[i].metadata);
             const expectedVector: number[] = Array(statistics.numberOfWords).fill(0);
-            expectedVector[statistics.wordStatistics['"hello"'].index] = 1 / (1 + 1.5 * (1 - 0.75 + 0.75 * (2 / 2.5)));
-            expectedVector[statistics.wordStatistics['"world"'].index] = 1 / (1 + 1.5 * (1 - 0.75 + 0.75 * (2 / 2.5)));
+            expectedVector[statistics.wordStatistics['"hello"'].i] = 1 / (1 + 1.5 * (1 - 0.75 + 0.75 * (2 / 2.5)));
+            expectedVector[statistics.wordStatistics['"world"'].i] = 1 / (1 + 1.5 * (1 - 0.75 + 0.75 * (2 / 2.5)));
             expectedVector.forEach((value, index) => expect(value).toBeCloseTo(v?.vector !== undefined ? v.vector[index] : 0, 5));
         });
     });
@@ -107,7 +107,7 @@ describe('BM25 Search', () => {
             },
             numberOfWords: 2,
         });
-        Object.entries({'"hello"': 2, '"world"': 2}).forEach(([word, count]) => expect(redisInfo.wordStatistics[word].numberOfDocumentsContainingWord).toEqual(count));
+        Object.entries({'"hello"': 2, '"world"': 2}).forEach(([word, count]) => expect(redisInfo.wordStatistics[word].n).toEqual(count));
         const vector = await bigIndex.fetch(['1', '2'], {namespace: 'test-2%20BM25',includeMetadata: true, includeVectors: true});
         expectTypeOf(vector).toBeArray();
         expect(vector.filter(i => i !== null)).toHaveLength(2);
@@ -117,8 +117,8 @@ describe('BM25 Search', () => {
             expectTypeOf(v).toBeObject;
             expect(v?.metadata).toEqual(documents[i].metadata);
             const expectedVector: number[] = Array(statistics.numberOfWords).fill(0);
-            expectedVector[statistics.wordStatistics['"hello"'].index] = 1 / (1 + 1.5 * (1 - 0.75 + 0.75 * (2 / 2)));
-            expectedVector[statistics.wordStatistics['"world"'].index] = 1 / (1 + 1.5 * (1 - 0.75 + 0.75 * (2 / 2)));
+            expectedVector[statistics.wordStatistics['"hello"'].i] = 1 / (1 + 1.5 * (1 - 0.75 + 0.75 * (2 / 2)));
+            expectedVector[statistics.wordStatistics['"world"'].i] = 1 / (1 + 1.5 * (1 - 0.75 + 0.75 * (2 / 2)));
             expectedVector.forEach((value, index) => expect(value).toBeCloseTo(v?.vector !== undefined ? v.vector[index] : 0, 5));
         });
 
@@ -138,18 +138,18 @@ describe('BM25 Search', () => {
             },
             numberOfWords: 9,
         });
-        Object.entries(wordCounts).forEach(([word, count]) => expect(redisInfo2.wordStatistics[word].numberOfDocumentsContainingWord).toEqual(count));
+        Object.entries(wordCounts).forEach(([word, count]) => expect(redisInfo2.wordStatistics[word].n).toEqual(count));
         const vector2 = await bigIndex.fetch(['5', '6'], {namespace: 'test-2%20BM25',includeMetadata: true, includeVectors: true});
         expectTypeOf(vector2).toBeArray();
         expect(vector2.filter(i => i !== null)).toHaveLength(2);
         expect(vector2.map(i => i !== null ? i.metadata : [])).toEqual(documents.slice(4).map(i => i.metadata));
 
         const expectedVector: number[] = Array(statistics2.numberOfWords).fill(0);
-        expectedVector[statistics2.wordStatistics['"foo"'].index] = 1 / (1 + 1.5 * (1 - 0.75 + 0.75 * (2 / 2.5)));
-        expectedVector[statistics2.wordStatistics['"bar"'].index] = 1 / (1 + 1.5 * (1 - 0.75 + 0.75 * (2 / 2.5)));
+        expectedVector[statistics2.wordStatistics['"foo"'].i] = 1 / (1 + 1.5 * (1 - 0.75 + 0.75 * (2 / 2.5)));
+        expectedVector[statistics2.wordStatistics['"bar"'].i] = 1 / (1 + 1.5 * (1 - 0.75 + 0.75 * (2 / 2.5)));
         expectedVector.forEach((value, index) => expect(value).toBeCloseTo(vector2[0]?.vector !== undefined ? vector2[0]?.vector[index] : 0, 5));
-        expectedVector[statistics2.wordStatistics['"foo"'].index] = 0;
-        expectedVector[statistics2.wordStatistics['"bar"'].index] = 1 / (1 + 1.5 * (1 - 0.75 + 0.75 * (1 / 2.5)));
+        expectedVector[statistics2.wordStatistics['"foo"'].i] = 0;
+        expectedVector[statistics2.wordStatistics['"bar"'].i] = 1 / (1 + 1.5 * (1 - 0.75 + 0.75 * (1 / 2.5)));
         expectedVector.forEach((value, index) => expect(value).toBeCloseTo(vector2[1]?.vector !== undefined ? vector2[1]?.vector[index] : 0, 5));
     }, 10000);
 
@@ -199,7 +199,7 @@ describe('BM25 Search', () => {
             },
             numberOfWords: 9,
         });
-        Object.entries({...wordCounts, '"hello"': 0, '"world"': 0, '"lorem"': 0, '"ipsum"': 0, '"dolor"': 0, '"sit"': 0, '"amet"': 0}).forEach(([word, count]) => expect(redisInfo2.wordStatistics[word].numberOfDocumentsContainingWord).toEqual(count));
+        Object.entries({...wordCounts, '"hello"': 0, '"world"': 0, '"lorem"': 0, '"ipsum"': 0, '"dolor"': 0, '"sit"': 0, '"amet"': 0}).forEach(([word, count]) => expect(redisInfo2.wordStatistics[word].n).toEqual(count));
     });
 
     describe('should search documents', async () => {

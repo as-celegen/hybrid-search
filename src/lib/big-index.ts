@@ -13,6 +13,7 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
     private index: IndexFunctions<Metadata>;
     private namespacePartitions: Record<string, number> = {};
     private ready: Promise<boolean>;
+    private skipZeroVectors: boolean = true;
 
     private addPartitionInfoToNamespace = (namespace: string, partition: number | string): string => (partition === 0 || partition === '0') ? namespace : namespace + '%20' + partition + '%20BigIndex';
     private checkNamespace = (namespace: string): boolean => namespace.endsWith(' BigIndex');
@@ -112,7 +113,7 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
         );
         const partitionCount = this.namespacePartitions[options?.namespace ?? ""];
         const results = await Promise.all(Array(partitionCount).fill(0).map(async (_, index) => {
-            const vectors =  await Promise.all(argsArray.map(async (arg) => {
+            const vectors =  (await Promise.all(argsArray.map(async (arg) => {
                 let vector = arg.vector.slice(index * this.dimension, (index + 1) * this.dimension);
                 if(vector.length < this.dimension){
                     vector = vector.concat(Array(this.dimension - vector.length).fill(0));
@@ -121,7 +122,7 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
                     ...arg,
                     vector,
                 };
-            }));
+            }))).filter((vector) => !this.skipZeroVectors || vector.vector.some(i => i !== 0));
             if(vectors.length === 0){
                 return 'Success';
             }

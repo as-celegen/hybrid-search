@@ -315,7 +315,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         if(pipelineForNewWords.length() != 0) {
             const resultsForNewWords = await pipelineForNewWords.exec<number[]>();
             resultsForNewWords.forEach((index, i) => {
-                    this.BM25Statistics[namespace].wordStatistics[newWords[i]].index = index;
+                    this.BM25Statistics[namespace].wordStatistics[newWords[i]].i = index;
                     this.BM25Statistics[namespace].numberOfWords = Math.max(this.BM25Statistics[namespace].numberOfWords, index + 1);
             });
         }
@@ -398,7 +398,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
             let index = this.BM25Statistics[namespace].wordStatistics[token]?.i ?? -1;
             if(index === -1){
                 let remoteWord = await redis.json.get<WordStatistic[]>(this.getKeyForNamespace(namespace), this.getPathForWordStats(token));
-                if(remoteWord !== null && remoteWord.length !== 0 && remoteWord[0].index !== -1) {
+                if(remoteWord !== null && remoteWord.length !== 0 && remoteWord[0].i !== -1) {
                     this.BM25Statistics[namespace].wordStatistics[token] = remoteWord[0];
                     index = remoteWord[0].i;
                     if(this.BM25Statistics[namespace].wordStatistics[token].i >= this.BM25Statistics[namespace].numberOfWords) {
@@ -429,7 +429,7 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
             let numberOfDocumentsContainingWord = this.BM25Statistics[namespace].wordStatistics[word]?.n ?? -1;
             if(index === -1 || numberOfDocumentsContainingWord < 0){
                 let remoteWord = await redis.json.get<WordStatistic[]>(this.getKeyForNamespace(namespace), this.getPathForWordStats(word));
-                if(remoteWord !== null && remoteWord.length !== 0 && remoteWord[0].index !== -1 && remoteWord[0].n >= 0) {
+                if(remoteWord !== null && remoteWord.length !== 0 && remoteWord[0].i !== -1 && remoteWord[0].n >= 0) {
                     this.BM25Statistics[namespace].wordStatistics[word] = remoteWord[0];
                     index = remoteWord[0].i;
                     numberOfDocumentsContainingWord = remoteWord[0].n;

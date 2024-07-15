@@ -111,8 +111,8 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
             argsArray.reduce((acc, arg) => Math.max(acc, Math.ceil((arg.vector?.length ?? 0)/this.dimension)), 0)
         );
         const partitionCount = this.namespacePartitions[options?.namespace ?? ""];
-        const partitionedVectors = Array(partitionCount).fill(0).map((_, index) => {
-            return argsArray.map((arg) => {
+        const results = await Promise.all(Array(partitionCount).fill(0).map(async (_, index) => {
+            const vectors =  await Promise.all(argsArray.map(async (arg) => {
                 let vector = arg.vector.slice(index * this.dimension, (index + 1) * this.dimension);
                 if(vector.length < this.dimension){
                     vector = vector.concat(Array(this.dimension - vector.length).fill(0));
@@ -121,9 +121,7 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
                     ...arg,
                     vector,
                 };
-            });
-        });
-        const results = await Promise.all(partitionedVectors.map((vectors, index) =>{
+            }));
             if(vectors.length === 0){
                 return 'Success';
             }

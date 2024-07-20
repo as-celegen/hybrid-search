@@ -1,22 +1,23 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"] });
-
-export const metadata: Metadata = {
-  title: "Hybrid Search Server",
-  description: "Hybrid Search Server using Upstash Vector",
+export const metadata = {
+  title: "Movies Semantic Search",
+  description: "A simple movie search engine",
+  icons: {
+    icon: "/favicon-32x32.png",
+  },
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html lang="en">
-      <body className={inter.className}>{children}</body>
+      <body className="min-h-screen bg-gradient-to-b text-emerald-900 from-emerald-500/10">
+        {children}
+      </body>
     </html>
   );
 }

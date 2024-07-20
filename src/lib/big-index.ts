@@ -62,7 +62,6 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
         if('data' in args){
             return await this.index.query<TMetadata>(args);
         }
-
         const argsArray: Record<number, QueryCommandPayload> = {};
         for(let i = 0; i < Math.ceil(args.vector.length/this.dimension); i++){
             let vector = args.vector.slice(i * this.dimension, (i + 1) * this.dimension);
@@ -122,7 +121,7 @@ export class BigIndex<Metadata extends Record<string, unknown> = Record<string, 
                     ...arg,
                     vector,
                 };
-            }))).filter((vector) => !this.skipZeroVectors || vector.vector.some(i => i !== 0));
+            }))).filter((vector) => !this.skipZeroVectors || index === 0 || vector.vector.some(i => i !== 0));
             if(vectors.length === 0){
                 return 'Success';
             }

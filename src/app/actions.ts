@@ -12,7 +12,7 @@ export async function searchMovies(
   try {
     const index = new Index<MovieMetadata>({
       url: window.location.origin,
-      token: process.env.NEXT_PUBLIC_READ_ONLY_TOKEN,
+      token: process.env.NEXT_PUBLIC_READ_ONLY_TOKEN ?? "placeholder-read-only",
     });
 
     const query = formData.get("query");

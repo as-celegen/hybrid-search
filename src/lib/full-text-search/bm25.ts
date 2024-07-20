@@ -254,16 +254,16 @@ export class BM25Search<Metadata extends Record<string, unknown> = Record<string
         }
     }
 
-    async updateOldVectors(namespace: string): Promise<string> {
+    async updateOldVectors(namespace: string): Promise<boolean> {
         const documentIds = await redis.smembers(this.getKeyForNamespaceSet(namespace));
-        const documents = await redis.json.mget<VectorWithData<Metadata>[][]>(documentIds.map(d => this.getRedisKeyForDocument(namespace, d)), '$');
-        return await super.upsert(await Promise.all(documents.map(async d => {
-            return {
+        return (await Promise.all(documentIds.map(async document => {
+            const d = await redis.json.get<VectorWithData<Metadata>[]>(this.getRedisKeyForDocument(namespace, document), '$');
+            if(d == null)return {updated: 1};
+            return await super.update({
                 id: d[0].id,
                 vector: await this.getVectorOfDocument(this.tokenizer(d[0].data), namespace),
-                metadata: d[0].metadata,
-            };
-        })), {namespace});
+            }, {namespace});
+        }))).every(s => s.updated == 1);
     }
 
     async defineNamespace(namespace: string): Promise<boolean> {

@@ -54,49 +54,11 @@ export async function searchMovies(
         movie.metadata?.imdb_link !== "IMDb link not available",
     );
 
-    // Extract vote counts and ratings for normalization
-    const popularity = filteredResponse.map(
-      (movie) => movie.metadata?.popularity ?? 0,
-    );
-    const ratings = filteredResponse.map(
-      (movie) => movie.metadata?.vote_average ?? 0,
-    );
-
-    console.log("popularity:", popularity);
-
-    const minPopularity = Math.min(...popularity);
-    const maxPopularity = Math.max(...popularity);
-    const minRating = Math.min(...ratings);
-    const maxRating = Math.max(...ratings);
-
-    const movies = filteredResponse.map((match) => {
-      const normalizedPopularity = normalize(
-        match.metadata?.popularity ?? 0,
-        minPopularity,
-        maxPopularity,
-      );
-      const normalizedRating = normalize(
-        match.metadata?.vote_average ?? 0,
-        minRating,
-        maxRating,
-      );
-      const relevance = match.score; // Assuming this is already normalized between 0 and 1
-      console.log("normalizedPopularity:", normalizedPopularity);
-      console.log("max:", maxPopularity);
-      console.log("min:", minPopularity);
-      const total =
-        0.5 * normalizedPopularity + 0.2 * normalizedRating + 0.3 * relevance;
-      return {
-        ...match,
-        total,
-      };
-    });
-
-    movies.sort((a, b) => b.total - a.total);
+    filteredResponse.sort((a, b) => b.score - a.score);
 
     return {
       code: ResultCode.Success,
-      data: movies,
+      data: filteredResponse,
     };
   } catch (error) {
     console.error("Error querying Upstash:", error);

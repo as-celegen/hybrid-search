@@ -147,8 +147,7 @@ function ResultData({ result }: { result: Result | undefined }) {
                 label="Popularity"
                 value={movie.metadata?.popularity!}
               />
-              <KeyValue label="Relevance" value={movie.score.toFixed(2)} />
-              <KeyValue label="Score" value={movie.total.toFixed(2)} />
+              <KeyValue label="Score" value={movie.score.toFixed(2)} />
               {/*formatter.format(value)*/}
             </div>
           </div>

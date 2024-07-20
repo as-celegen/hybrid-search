@@ -11,7 +11,6 @@ export type MovieMetadata = {
 };
 
 export type Movie = {
-    total: number;
     id: number | string;
     score: number;
     vector?: number[];
